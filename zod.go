@@ -24,7 +24,7 @@ func (c *Converter) Convert(input interface{}) string {
 	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	output := strings.Builder{}
-	sorted := []entry{}
+	var sorted []entry
 	for _, ent := range c.outputs {
 		sorted = append(sorted, ent)
 	}
@@ -44,7 +44,7 @@ func (c *Converter) ConvertSlice(inputs []interface{}) string {
 		c.addSchema(t.Name(), c.convertStructTopLevel(t))
 	}
 	output := strings.Builder{}
-	sorted := []entry{}
+	var sorted []entry
 	for _, ent := range c.outputs {
 		sorted = append(sorted, ent)
 	}
@@ -69,7 +69,7 @@ func StructToZodSchema(input interface{}) string {
 	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	output := strings.Builder{}
-	sorted := []entry{}
+	var sorted []entry
 	for _, ent := range c.outputs {
 		sorted = append(sorted, ent)
 	}
@@ -94,7 +94,7 @@ func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
 	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	output := strings.Builder{}
-	sorted := []entry{}
+	var sorted []entry
 	for _, ent := range c.outputs {
 		sorted = append(sorted, ent)
 	}
