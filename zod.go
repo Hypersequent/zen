@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -175,7 +176,7 @@ func fieldName(input reflect.StructField) string {
 		// raw field name.
 	}
 
-	// When Golang marshals a struct to JSON and it doesn't have any JSON tags
+	// When Golang marshals a struct to JSON, and it doesn't have any JSON tags
 	// that give the fields names, it defaults to just using the field's name.
 	return input.Name
 }
@@ -236,7 +237,7 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 	return output.String()
 }
 
-var matchGenericTypeName = regexp.MustCompile(`(.+)\[(.+)\]`)
+var matchGenericTypeName = regexp.MustCompile(`(.+)\[(.+)]`)
 
 // checking it a reflected type is a generic isn't supported as far as I can see
 // so this simple check looks for a `[` character in the type name: `T1[T2]`.
@@ -272,7 +273,7 @@ func (c *Converter) handleCustomType(t reflect.Type, name, validate string, inde
 	return "", false
 }
 
-func (c *Converter) ConvertType(t reflect.Type, name, validate string, indent int) string {
+func (c *Converter) ConvertType(t reflect.Type, name string, validate string, indent int) string {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()
 		return c.ConvertType(inner, name, validate, indent)
@@ -282,10 +283,8 @@ func (c *Converter) ConvertType(t reflect.Type, name, validate string, indent in
 		return custom
 	}
 
-	if t.Kind() == reflect.Slice {
-		return fmt.Sprintf(
-			"%s.array()",
-			c.ConvertType(t.Elem(), name, validate, indent))
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		return c.convertSlice(t, name, validate, indent)
 	}
 
 	if t.Kind() == reflect.Struct {
@@ -297,9 +296,7 @@ func (c *Converter) ConvertType(t reflect.Type, name, validate string, indent in
 			if validate != "" {
 				// We compare with both the zero value from go and the zero value that zod coerces to
 				if validate == "required" {
-					validateStr = fmt.Sprintf(`.refine(
-%s(val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(),
-%s'Invalid date')`, indentation(indent), indentation(indent))
+					validateStr = ".refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date')"
 				}
 			}
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
@@ -314,12 +311,22 @@ func (c *Converter) ConvertType(t reflect.Type, name, validate string, indent in
 		return c.convertMap(t, name, validate, indent)
 	}
 
-	ztype, ok := typeMapping[t.Kind()]
+	zodType, ok := typeMapping[t.Kind()]
 	if !ok {
 		panic(fmt.Sprint("cannot handle: ", t.Kind()))
 	}
 
-	return fmt.Sprintf("z.%s()", ztype)
+	var validateStr string
+	if validate != "" {
+		switch zodType {
+		case "string":
+			validateStr = c.validateString(validate)
+		case "number":
+			validateStr = c.validateNumber(validate)
+		}
+	}
+
+	return fmt.Sprintf("z.%s()%s", zodType, validateStr)
 }
 
 func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) string {
@@ -353,22 +360,298 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		nullableCall)
 }
 
+func (c *Converter) convertSlice(t reflect.Type, name, validate string, indent int) string {
+	var validateStr strings.Builder
+	if validate != "" {
+		parts := strings.Split(validate, ",")
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "required" {
+				validateStr.WriteString(".nonempty()")
+			} else if strings.HasPrefix(part, "min=") {
+				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
+			} else if strings.HasPrefix(part, "max=") {
+				validateStr.WriteString(fmt.Sprintf(".max(%s)", part[4:]))
+			} else if strings.HasPrefix(part, "len=") {
+				validateStr.WriteString(fmt.Sprintf(".length(%s)", part[4:]))
+			} else if strings.HasPrefix(part, "eq=") {
+				validateStr.WriteString(fmt.Sprintf(".length(%s)", part[3:]))
+			} else if strings.HasPrefix(part, "ne=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val.length !== %s)", part[3:]))
+			} else if strings.HasPrefix(part, "gt=") {
+				val, err := strconv.Atoi(part[3:])
+				if err != nil || val < 0 {
+					panic(fmt.Sprintf("invalid gt value: %s", part[3:]))
+				}
+				validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
+			} else if strings.HasPrefix(part, "gte=") {
+				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
+			} else if strings.HasPrefix(part, "lt=") {
+				val, err := strconv.Atoi(part[3:])
+				if err != nil || val <= 0 {
+					panic(fmt.Sprintf("invalid lt value: %s", part[3:]))
+				}
+				validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
+			} else if strings.HasPrefix(part, "lte=") {
+				validateStr.WriteString(fmt.Sprintf(".max(%s)", part[4:]))
+			} else {
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		}
+	}
+
+	return fmt.Sprintf(
+		"%s.array()%s",
+		c.ConvertType(t.Elem(), name, "", indent), validateStr.String())
+}
+
 func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int) string {
 	return fmt.Sprintf(`z.record(%s, %s)`,
 		c.ConvertType(t.Key(), name, validate, indent),
 		c.ConvertType(t.Elem(), name, validate, indent))
 }
 
+func (c *Converter) validateNumber(validate string) string {
+	var validateStr strings.Builder
+	parts := strings.Split(validate, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+
+		if strings.ContainsRune(part, '=') {
+			idx := strings.Index(part, "=")
+			if idx == 0 || idx == len(part)-1 {
+				panic(fmt.Sprintf("invalid validation: %s", part))
+			}
+
+			valName := part[:idx]
+			valValue := part[idx+1:]
+
+			switch valName {
+			case "eq":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
+			case "gt":
+				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
+			case "gte":
+				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
+			case "lt":
+				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
+			case "lte":
+				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
+			case "ne":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== %s)", valValue))
+			case "oneof":
+				vals := strings.Fields(valValue)
+				if len(vals) == 0 {
+					panic(fmt.Sprintf("invalid oneof validation: %s", part))
+				}
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => [%s].includes(val)", strings.Join(vals, ", ")))
+			case "min":
+				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
+			case "max":
+				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
+			case "len":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
+
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		} else if part == "required" {
+			validateStr.WriteString(".refine((val) => val !== 0)")
+		} else {
+			panic(fmt.Sprintf("unknown validation: %s", part))
+		}
+	}
+
+	return validateStr.String()
+}
+
+func (c *Converter) validateString(validate string) string {
+	var validateStr strings.Builder
+	parts := strings.Split(validate, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		// We handle the parts which have = separately
+		if strings.ContainsRune(part, '=') {
+			idx := strings.Index(part, "=")
+			if idx == 0 || idx == len(part)-1 {
+				panic(fmt.Sprintf("invalid validation: %s", part))
+			}
+
+			valName := part[:idx]
+			valValue := part[idx+1:]
+
+			switch valName {
+			case "eq":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
+			case "ne":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
+			case "oneof":
+				vals := splitParamsRegex.FindAllString(part[6:], -1)
+				for i := 0; i < len(vals); i++ {
+					vals[i] = strings.Replace(vals[i], "'", "", -1)
+				}
+				if len(vals) == 0 {
+					panic("oneof= must be followed by a list of values")
+				}
+				// const FishEnum = z.enum(["Salmon", "Tuna", "Trout"]);
+				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"])", strings.Join(vals, "\", \"")))
+			case "len":
+				validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+			case "min":
+				validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+			case "max":
+				validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+			case "gt":
+				val, err := strconv.Atoi(valValue)
+				if err != nil {
+					panic("gt= must be followed by a number")
+				}
+				validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
+			case "gte":
+				validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+			case "lt":
+				val, err := strconv.Atoi(valValue)
+				if err != nil {
+					panic("lt= must be followed by a number")
+				}
+				validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
+			case "lte":
+				validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+			case "contains":
+				validateStr.WriteString(fmt.Sprintf(".includes(\"%s\")", valValue))
+			case "endswith":
+				validateStr.WriteString(fmt.Sprintf(".endsWith(\"%s\")", valValue))
+			case "startswith":
+				validateStr.WriteString(fmt.Sprintf(".startsWith(\"%s\")", valValue))
+
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		} else {
+			switch part {
+			case "required":
+				validateStr.WriteString(".min(1)")
+			case "email":
+				// email is more readable than copying the regex in regexes.go but could be incompatible
+				// Also there is an open issue https://github.com/go-playground/validator/issues/517
+				// https://github.com/puellanivis/pedantic-regexps/blob/master/email.go
+				// solution is there in the comments but not implemented yet
+				validateStr.WriteString(".email()")
+			case "url":
+				// url is more readable than copying the regex in regexes.go but could be incompatible
+				validateStr.WriteString(".url()")
+			case "ipv4":
+				validateStr.WriteString(".ip({ version: \"v4\" })")
+			case "ip4_addr":
+				validateStr.WriteString(".ip({ version: \"v4\" })")
+			case "ipv6":
+				validateStr.WriteString(".ip({ version: \"v6\" })")
+			case "ip6_addr":
+				validateStr.WriteString(".ip({ version: \"v6\" })")
+			case "ip":
+				validateStr.WriteString(".ip()")
+			case "ip_addr":
+				validateStr.WriteString(".ip()")
+			case "http_url":
+				// url is more readable than copying the regex in regexes.go but could be incompatible
+				validateStr.WriteString(".url()")
+			case "url_encoded":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString))
+			case "alpha":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaRegexString))
+			case "alphanum":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString))
+			case "alphanumunicode":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeNumericRegexString))
+			case "alphaunicode":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeRegexString))
+			case "ascii":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", aSCIIRegexString))
+			case "boolean":
+				validateStr.WriteString(".enum(['true', 'false'])")
+			case "lowercase":
+				validateStr.WriteString(".refine((val) => val === val.toLowerCase())")
+			case "number":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numberRegexString))
+			case "numeric":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numericRegexString))
+			case "uppercase":
+				validateStr.WriteString(".refine((val) => val === val.toUpperCase())")
+			case "base64":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", base64RegexString))
+			case "mongodb":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", mongodbRegexString))
+			case "datetime":
+				validateStr.WriteString(".datetime()")
+			case "hexadecimal":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", hexadecimalRegexString))
+			case "json":
+				// TODO: Better error messages with this
+				// const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+				//type Literal = z.infer<typeof literalSchema>;
+				//type Json = Literal | { [key: string]: Json } | Json[];
+				//const jsonSchema: z.ZodType<Json> = z.lazy(() =>
+				//  z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)])
+				//);
+				//
+				//jsonSchema.parse(data);
+
+				validateStr.WriteString(".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
+			case "jwt":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", jWTRegexString))
+			case "latitude":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", latitudeRegexString))
+			case "longitude":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", longitudeRegexString))
+			case "uuid":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRegexString))
+			case "uuid3":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RegexString))
+			case "uuid3_rfc4122":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RFC4122RegexString))
+			case "uuid4":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RegexString))
+			case "uuid4_rfc4122":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RFC4122RegexString))
+			case "uuid5":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RegexString))
+			case "uuid5_rfc4122":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RFC4122RegexString))
+			case "uuid_rfc4122":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRFC4122RegexString))
+			case "md4":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md4RegexString))
+			case "md5":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md5RegexString))
+			case "sha256":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha256RegexString))
+			case "sha384":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha384RegexString))
+			case "sha512":
+				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha512RegexString))
+
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		}
+	}
+
+	return validateStr.String()
+}
+
 func isNullable(field reflect.StructField) bool {
 	// interfaces are currently exported with "any" type, which already includes "null"
-	if isInterface(field) {
+	if isInterface(field) || strings.Contains(field.Tag.Get("validate"), "required") {
 		return false
 	}
 	// pointers can be nil, which are mapped to null in JS/TS.
 	if field.Type.Kind() == reflect.Ptr {
 		// However, if a pointer field is tagged with "omitempty", it usually cannot be exported as "null"
 		// since nil is a pointer's empty value.
-		if isOptional(field) {
+		if strings.Contains(field.Tag.Get("json"), "omitempty") {
 			// Unless it is a pointer to a slice, a map, a pointer, or an interface
 			// because values with those types can themselves be nil and will be exported as "null".
 			k := field.Type.Elem().Kind()
@@ -378,8 +661,33 @@ func isNullable(field reflect.StructField) bool {
 	}
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
-		// unless the are also optional in which case they are no longer nullable
-		return !isOptional(field)
+		for _, part := range strings.Split(field.Tag.Get("validate"), ",") {
+			part = strings.TrimSpace(part)
+			if strings.ContainsRune(part, '=') {
+				idx := strings.Index(part, "=")
+				if idx == 0 || idx == len(part)-1 {
+					panic(fmt.Sprintf("invalid validation: %s", part))
+				}
+
+				valName := part[:idx]
+				valValue := part[idx+1:]
+
+				if (valName == "len" || valName == "min" || valName == "eq" || valName == "gte") && valValue != "0" ||
+					valName == "ne" && valValue == "0" ||
+					valName == "gt" {
+					return false
+				}
+
+				if (valName == "max" || valName == "lte") && valValue == "0" ||
+					valName == "lt" && (valValue == "1" || valValue == "0") ||
+					(valName == "eq" || valName == "len") && valValue == "0" {
+					return true
+				}
+			}
+		}
+
+		// unless there are also optional in which case they are no longer nullable
+		return !strings.Contains(field.Tag.Get("json"), "omitempty")
 	}
 	return false
 }
@@ -398,7 +706,7 @@ func isOptional(field reflect.StructField) bool {
 	// Struct fields that are themselves structs ignore the "omitempty" tag because
 	// structs do not have an empty value.
 	// Interfaces are currently exported with "any" type, which already includes "undefined"
-	if field.Type.Kind() == reflect.Struct || isInterface(field) {
+	if field.Type.Kind() == reflect.Struct || isInterface(field) || strings.Contains(field.Tag.Get("validate"), "required") {
 		return false
 	}
 	// Otherwise, omitempty zero-values are omitted and are mapped to undefined in JS/TS.
