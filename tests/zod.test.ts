@@ -43,6 +43,12 @@ describe("Zod time tests", () => {
 			Name: "John",
 			When: new Date("0001-01-01T00:00:00Z"),
 		})
+
+		const user5 = UserSchema.safeParse({
+			Name: "John",
+			When: "",
+		});
+		expect(user5.success).toBe(false)
 	})
 
 	it('TestTimeWithRequired', () => {
@@ -83,5 +89,12 @@ describe("Zod time tests", () => {
 			When: "0001-01-01T00:00:00Z"
 		})
 		expect(user4.success).toBe(false)
+
+		const user5 = UserSchema.safeParse({
+			Name: "John",
+			When: "",
+		});
+		expect(user5.success).toBe(false)
 	})
 })
+
