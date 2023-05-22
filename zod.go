@@ -140,7 +140,7 @@ func (a ByOrder) Len() int           { return len(a) }
 func (a ByOrder) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByOrder) Less(i, j int) bool { return a[i].order < a[j].order }
 
-type CustomFn func(*Converter, reflect.Type, string, string, int) string
+type CustomFn func(*Converter, reflect.Type, string, string, string, int) string
 
 type Converter struct {
 	prefix  string
@@ -150,7 +150,7 @@ type Converter struct {
 }
 
 func (c *Converter) addSchema(name string, data string) {
-	//First check if the object already exists. If it does do not replace. This is needed for second order
+	// First check if the object already exists. If it does do not replace. This is needed for second order
 	_, ok := c.outputs[name]
 	if !ok {
 		order := c.structs
@@ -261,31 +261,31 @@ func getFullName(t reflect.Type) (string, string) {
 	return fmt.Sprintf("%s.%s", t.PkgPath(), typename), generic
 }
 
-func (c *Converter) handleCustomType(t reflect.Type, name string, indent int) (string, bool) {
+func (c *Converter) handleCustomType(t reflect.Type, name, validate string, indent int) (string, bool) {
 	fullName, generic := getFullName(t)
 
 	custom, ok := c.custom[fullName]
 	if ok {
-		return custom(c, t, name, generic, indent), true
+		return custom(c, t, name, generic, validate, indent), true
 	}
 
 	return "", false
 }
 
-func (c *Converter) ConvertType(t reflect.Type, name string, indent int) string {
+func (c *Converter) ConvertType(t reflect.Type, name, validate string, indent int) string {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()
-		return c.ConvertType(inner, name, indent)
+		return c.ConvertType(inner, name, validate, indent)
 	}
 
-	if custom, ok := c.handleCustomType(t, name, indent); ok {
+	if custom, ok := c.handleCustomType(t, name, validate, indent); ok {
 		return custom
 	}
 
 	if t.Kind() == reflect.Slice {
 		return fmt.Sprintf(
 			"%s.array()",
-			c.ConvertType(t.Elem(), name, indent))
+			c.ConvertType(t.Elem(), name, validate, indent))
 	}
 
 	if t.Kind() == reflect.Struct {
@@ -293,8 +293,17 @@ func (c *Converter) ConvertType(t reflect.Type, name string, indent int) string 
 		if t.Name() == "" {
 			return c.convertStruct(t, indent)
 		} else if t.Name() == "Time" {
-			// timestamps are serialised to strings.
-			return "z.string()"
+			var validateStr string
+			if validate != "" {
+				// We compare with both the zero value from go and the zero value that zod coerces to
+				if validate == "required" {
+					validateStr = fmt.Sprintf(`.refine(
+%s(val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(),
+%s'Invalid date')`, indentation(indent), indentation(indent))
+				}
+			}
+			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
+			return "z.coerce.date()" + validateStr
 		} else {
 			c.addSchema(name, c.convertStructTopLevel(t))
 			return schemaName(c.prefix, name)
@@ -302,7 +311,7 @@ func (c *Converter) ConvertType(t reflect.Type, name string, indent int) string 
 	}
 
 	if t.Kind() == reflect.Map {
-		return c.convertMap(t, name, indent)
+		return c.convertMap(t, name, validate, indent)
 	}
 
 	ztype, ok := typeMapping[t.Kind()]
@@ -339,15 +348,15 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		"%s%s: %s%s%s,\n",
 		indentation(indent),
 		name,
-		c.ConvertType(f.Type, typeName(f.Type), indent),
+		c.ConvertType(f.Type, typeName(f.Type), f.Tag.Get("validate"), indent),
 		optionalCall,
 		nullableCall)
 }
 
-func (c *Converter) convertMap(t reflect.Type, name string, indent int) string {
+func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int) string {
 	return fmt.Sprintf(`z.record(%s, %s)`,
-		c.ConvertType(t.Key(), name, indent),
-		c.ConvertType(t.Elem(), name, indent))
+		c.ConvertType(t.Key(), name, validate, indent),
+		c.ConvertType(t.Elem(), name, validate, indent))
 }
 
 func isNullable(field reflect.StructField) bool {

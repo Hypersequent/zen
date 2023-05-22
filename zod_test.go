@@ -509,7 +509,37 @@ func TestStructTime(t *testing.T) {
 	assert.Equal(t,
 		`export const UserSchema = z.object({
   Name: z.string(),
-  When: z.string(),
+  When: z.coerce.date(),
+})
+export type User = z.infer<typeof UserSchema>
+
+`,
+		StructToZodSchema(User{}))
+}
+
+func TestTimeWithRequired(t *testing.T) {
+	type User struct {
+		When time.Time `validate:"required"`
+	}
+	assert.Equal(t,
+		`export const UserSchema = z.object({
+  When: z.coerce.date().refine(
+  (val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(),
+  'Invalid date'),
+})
+export type User = z.infer<typeof UserSchema>
+
+`,
+		StructToZodSchema(User{}))
+}
+
+func TestDuration(t *testing.T) {
+	type User struct {
+		HowLong time.Duration
+	}
+	assert.Equal(t,
+		`export const UserSchema = z.object({
+  HowLong: z.number(),
 })
 export type User = z.infer<typeof UserSchema>
 
@@ -519,14 +549,14 @@ export type User = z.infer<typeof UserSchema>
 
 func TestCustom(t *testing.T) {
 	c := NewConverter(map[string]CustomFn{
-		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, s, g string, i int) string {
+		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, s, g, validate string, i int) string {
 			return "z.string()"
 		},
 	})
 
 	type Decimal struct {
-		value    int
-		exponent int
+		Value    int
+		Exponent int
 	}
 
 	type User struct {
