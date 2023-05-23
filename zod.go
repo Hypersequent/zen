@@ -284,7 +284,7 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 	}
 
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		return c.convertSlice(t, name, validate, indent)
+		return c.convertSliceAndArray(t, name, validate, indent)
 	}
 
 	if t.Kind() == reflect.Struct {
@@ -360,14 +360,22 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		nullableCall)
 }
 
-func (c *Converter) convertSlice(t reflect.Type, name, validate string, indent int) string {
+func (c *Converter) convertSliceAndArray(t reflect.Type, name, validate string, indent int) string {
+	if t.Kind() == reflect.Array {
+		return fmt.Sprintf(
+			"%s.array()%s",
+			c.ConvertType(t.Elem(), name, getValidateAfterDive(validate), indent), fmt.Sprintf(".length(%d)", t.Len()))
+	}
+
 	var validateStr strings.Builder
 	if validate != "" {
 		parts := strings.Split(validate, ",")
 
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
-			if part == "required" {
+			if part == "dive" {
+				break
+			} else if part == "required" {
 				validateStr.WriteString(".nonempty()")
 			} else if strings.HasPrefix(part, "min=") {
 				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
@@ -403,13 +411,104 @@ func (c *Converter) convertSlice(t reflect.Type, name, validate string, indent i
 
 	return fmt.Sprintf(
 		"%s.array()%s",
-		c.ConvertType(t.Elem(), name, "", indent), validateStr.String())
+		c.ConvertType(t.Elem(), name, getValidateAfterDive(validate), indent), validateStr.String())
 }
 
 func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int) string {
-	return fmt.Sprintf(`z.record(%s, %s)`,
-		c.ConvertType(t.Key(), name, validate, indent),
-		c.ConvertType(t.Elem(), name, validate, indent))
+	var validateStr strings.Builder
+	if validate != "" {
+		parts := strings.Split(validate, ",")
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "dive" {
+				break
+			} else if part == "required" {
+				validateStr.WriteString(".refine((val) => Object.keys(val).length > 0, 'Empty map')")
+			} else if strings.HasPrefix(part, "min=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", part[4:]))
+			} else if strings.HasPrefix(part, "max=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", part[4:]))
+			} else if strings.HasPrefix(part, "len=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", part[4:]))
+			} else if strings.HasPrefix(part, "eq=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", part[3:]))
+			} else if strings.HasPrefix(part, "ne=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length !== %s, 'Map wrong size')", part[3:]))
+			} else if strings.HasPrefix(part, "gt=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length > %s, 'Map too small')", part[3:]))
+			} else if strings.HasPrefix(part, "gte=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", part[4:]))
+			} else if strings.HasPrefix(part, "lt=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length < %s, 'Map too large')", part[3:]))
+			} else if strings.HasPrefix(part, "lte=") {
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", part[4:]))
+			} else {
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		}
+	}
+
+	return fmt.Sprintf(`z.record(%s, %s)%s`,
+		c.ConvertType(t.Key(), name, getValidateKeys(validate), indent),
+		c.ConvertType(t.Elem(), name, getValidateValues(validate), indent),
+		validateStr.String())
+}
+
+func getValidateAfterDive(validate string) string {
+	// select part of validate string after dive, if it exists
+	var validateNext string
+	if validate != "" {
+		parts := strings.Split(validate, ",")
+		for i, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "dive" {
+				validateNext = strings.Join(parts[i+1:], ",")
+				break
+			}
+		}
+	}
+
+	return validateNext
+}
+
+// These are to be used together directly after the dive tag and tells the validator that anything between 'keys' and 'endkeys' applies to the keys of a map and not the values; think of it like the 'dive' tag, but for map keys instead of values. Multidimensional nesting is also supported, each level you wish to validate will require another 'keys' and 'endkeys' tag. These tags are only valid for maps.
+//
+// Usage: dive,keys,othertagvalidation(s),endkeys,valuevalidationtags
+func getValidateKeys(validate string) string {
+	var validateKeys string
+	if strings.Contains(validate, "keys") {
+		removedSuffix := strings.SplitN(validate, ",endkeys", 2)[0]
+		parts := strings.SplitN(removedSuffix, "keys,", 2)
+		if len(parts) == 2 {
+			validateKeys = parts[1]
+		}
+	}
+	return validateKeys
+}
+
+func getValidateValues(validate string) string {
+	var validateValues string
+
+	if strings.Contains(validate, "dive,keys") {
+		removedPrefix := strings.SplitN(validate, ",endkeys", 2)[1]
+
+		if strings.Contains(removedPrefix, ",dive") {
+			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
+		} else {
+			validateValues = removedPrefix
+		}
+		validateValues = strings.TrimPrefix(validateValues, ",")
+	} else if strings.Contains(validate, "dive") {
+		removedPrefix := strings.SplitN(validate, "dive,", 2)[1]
+		if strings.Contains(removedPrefix, ",dive") {
+			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
+		} else {
+			validateValues = removedPrefix
+		}
+	}
+
+	return validateValues
 }
 
 func (c *Converter) validateNumber(validate string) string {
@@ -446,7 +545,7 @@ func (c *Converter) validateNumber(validate string) string {
 				if len(vals) == 0 {
 					panic(fmt.Sprintf("invalid oneof validation: %s", part))
 				}
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => [%s].includes(val)", strings.Join(vals, ", ")))
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
 			case "min":
 				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
 			case "max":
@@ -643,8 +742,10 @@ func (c *Converter) validateString(validate string) string {
 }
 
 func isNullable(field reflect.StructField) bool {
+	validateCurrent := getValidateCurrent(field.Tag.Get("validate"))
+
 	// interfaces are currently exported with "any" type, which already includes "null"
-	if isInterface(field) || strings.Contains(field.Tag.Get("validate"), "required") {
+	if isInterface(field) || strings.Contains(validateCurrent, "required") {
 		return false
 	}
 	// pointers can be nil, which are mapped to null in JS/TS.
@@ -661,7 +762,7 @@ func isNullable(field reflect.StructField) bool {
 	}
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
-		for _, part := range strings.Split(field.Tag.Get("validate"), ",") {
+		for _, part := range strings.Split(validateCurrent, ",") {
 			part = strings.TrimSpace(part)
 			if strings.ContainsRune(part, '=') {
 				idx := strings.Index(part, "=")
@@ -692,6 +793,20 @@ func isNullable(field reflect.StructField) bool {
 	return false
 }
 
+func getValidateCurrent(validate string) string {
+	var validateCurrent string
+
+	if strings.HasPrefix(validate, "dive") {
+
+	} else if strings.Contains(validate, "dive") {
+		validateCurrent = strings.Split(validate, "dive")[1]
+	} else {
+		validateCurrent = validate
+	}
+
+	return validateCurrent
+}
+
 // Checks whether the first non-pointer type is an interface
 func isInterface(field reflect.StructField) bool {
 	t := field.Type
@@ -706,7 +821,8 @@ func isOptional(field reflect.StructField) bool {
 	// Struct fields that are themselves structs ignore the "omitempty" tag because
 	// structs do not have an empty value.
 	// Interfaces are currently exported with "any" type, which already includes "undefined"
-	if field.Type.Kind() == reflect.Struct || isInterface(field) || strings.Contains(field.Tag.Get("validate"), "required") {
+	if field.Type.Kind() == reflect.Struct || isInterface(field) ||
+		strings.Contains(getValidateCurrent(field.Tag.Get("validate")), "required") {
 		return false
 	}
 	// Otherwise, omitempty zero-values are omitted and are mapped to undefined in JS/TS.

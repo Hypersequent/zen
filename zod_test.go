@@ -128,7 +128,7 @@ export type User = z.infer<typeof UserSchema>
 		StructToZodSchema(User{}))
 }
 
-func TestStructArray(t *testing.T) {
+func TestStructSlice(t *testing.T) {
 	type User struct {
 		Favourites []struct {
 			Name string
@@ -146,7 +146,7 @@ export type User = z.infer<typeof UserSchema>
 		StructToZodSchema(User{}))
 }
 
-func TestStructArrayOptional(t *testing.T) {
+func TestStructSliceOptional(t *testing.T) {
 	type User struct {
 		Favourites []struct {
 			Name string
@@ -164,7 +164,7 @@ export type User = z.infer<typeof UserSchema>
 		StructToZodSchema(User{}))
 }
 
-func TestStructArrayOptionalNullable(t *testing.T) {
+func TestStructSliceOptionalNullable(t *testing.T) {
 	type User struct {
 		Favourites *[]struct {
 			Name string
@@ -1181,6 +1181,199 @@ export type User = z.infer<typeof UserSchema>
 `, StructToZodSchema(User{}))
 }
 
+func TestMapWithValidations(t *testing.T) {
+	type Required struct {
+		Map map[string]string `validate:"required"`
+	}
+	assert.Equal(t,
+		`export const RequiredSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 0, 'Empty map'),
+})
+export type Required = z.infer<typeof RequiredSchema>
+
+`, StructToZodSchema(Required{}))
+
+	type Min struct {
+		Map map[string]string `validate:"min=1"`
+	}
+	assert.Equal(t,
+		`export const MinSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type Min = z.infer<typeof MinSchema>
+
+`, StructToZodSchema(Min{}))
+
+	type Max struct {
+		Map map[string]string `validate:"max=1"`
+	}
+	assert.Equal(t,
+		`export const MaxSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+})
+export type Max = z.infer<typeof MaxSchema>
+
+`, StructToZodSchema(Max{}))
+
+	type Len struct {
+		Map map[string]string `validate:"len=1"`
+	}
+	assert.Equal(t,
+		`export const LenSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type Len = z.infer<typeof LenSchema>
+
+`, StructToZodSchema(Len{}))
+
+	type MinMax struct {
+		Map map[string]string `validate:"min=1,max=2"`
+	}
+	assert.Equal(t,
+		`export const MinMaxSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
+})
+export type MinMax = z.infer<typeof MinMaxSchema>
+
+`, StructToZodSchema(MinMax{}))
+
+	type Eq struct {
+		Map map[string]string `validate:"eq=1"`
+	}
+	assert.Equal(t,
+		`export const EqSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type Eq = z.infer<typeof EqSchema>
+
+`, StructToZodSchema(Eq{}))
+
+	type Ne struct {
+		Map map[string]string `validate:"ne=1"`
+	}
+	assert.Equal(t,
+		`export const NeSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size').nullable(),
+})
+export type Ne = z.infer<typeof NeSchema>
+
+`, StructToZodSchema(Ne{}))
+
+	type Gt struct {
+		Map map[string]string `validate:"gt=1"`
+	}
+	assert.Equal(t,
+		`export const GtSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 1, 'Map too small'),
+})
+export type Gt = z.infer<typeof GtSchema>
+
+`, StructToZodSchema(Gt{}))
+
+	type Gte struct {
+		Map map[string]string `validate:"gte=1"`
+	}
+	assert.Equal(t,
+		`export const GteSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type Gte = z.infer<typeof GteSchema>
+
+`, StructToZodSchema(Gte{}))
+
+	type Lt struct {
+		Map map[string]string `validate:"lt=1"`
+	}
+	assert.Equal(t,
+		`export const LtSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large').nullable(),
+})
+export type Lt = z.infer<typeof LtSchema>
+
+`, StructToZodSchema(Lt{}))
+
+	type Lte struct {
+		Map map[string]string `validate:"lte=1"`
+	}
+	assert.Equal(t,
+		`export const LteSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+})
+export type Lte = z.infer<typeof LteSchema>
+
+`, StructToZodSchema(Lte{}))
+
+	type Bad struct {
+		Map map[string]string `validate:"bad=1"`
+	}
+	assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+
+	type Dive1 struct {
+		Map map[string]string `validate:"dive,min=2"`
+	}
+	assert.Equal(t,
+		`export const Dive1Schema = z.object({
+  Map: z.record(z.string(), z.string().min(2)).nullable(),
+})
+export type Dive1 = z.infer<typeof Dive1Schema>
+
+`, StructToZodSchema(Dive1{}))
+
+	type Dive2 struct {
+		Map []map[string]string `validate:"required,dive,min=2,dive,min=3"`
+	}
+	assert.Equal(t,
+		`export const Dive2Schema = z.object({
+  Map: z.record(z.string(), z.string().min(3)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array().nonempty(),
+})
+export type Dive2 = z.infer<typeof Dive2Schema>
+
+`, StructToZodSchema(Dive2{}))
+
+	type Dive3 struct {
+		Map []map[string]string `validate:"required,dive,min=2,dive,keys,min=3,endkeys,max=4"`
+	}
+	assert.Equal(t,
+		`export const Dive3Schema = z.object({
+  Map: z.record(z.string().min(3), z.string().max(4)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array().nonempty(),
+})
+export type Dive3 = z.infer<typeof Dive3Schema>
+
+`, StructToZodSchema(Dive3{}))
+}
+
+func TestGetValidateKeys(t *testing.T) {
+	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,max=4"))
+	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,max=4"))
+	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys"))
+	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys"))
+	assert.Equal(t, "", getValidateKeys("dive,keys,endkeys,max=4"))
+	assert.Equal(t, "", getValidateKeys("dive,max=4"))
+	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,max=4,dive,keys,min=3,endkeys,max=4"))
+	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,max=4,dive,keys,min=3,max=5,endkeys,max=4"))
+	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,dive,keys,min=3,endkeys"))
+	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,dive,keys,min=3,max=5,endkeys"))
+	assert.Equal(t, "", getValidateKeys("dive,keys,endkeys,max=4,dive,keys,endkeys,max=4"))
+	assert.Equal(t, "min=3", getValidateKeys("min=2,dive,keys,min=3,endkeys,max=4"))
+}
+func TestGetValidateValues(t *testing.T) {
+	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,endkeys,max=4"))
+	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,max=5,endkeys,max=4"))
+	assert.Equal(t, "", getValidateValues("dive,keys,min=3,endkeys"))
+	assert.Equal(t, "", getValidateValues("dive,keys,min=3,max=5,endkeys"))
+	assert.Equal(t, "max=4", getValidateValues("dive,keys,endkeys,max=4"))
+
+	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,endkeys,max=4,dive,keys,min=3,endkeys,max=4"))
+	assert.Equal(t, "min=3,max=4", getValidateValues("dive,keys,min=3,max=5,endkeys,min=3,max=4,dive,keys,min=3,max=5,endkeys,max=4"))
+	assert.Equal(t, "", getValidateValues("dive,keys,min=3,endkeys,dive,keys,min=3,endkeys"))
+	assert.Equal(t, "", getValidateValues("dive,keys,min=3,max=5,endkeys,dive,keys,min=3,max=5,endkeys"))
+	assert.Equal(t, "max=4", getValidateValues("dive,keys,endkeys,max=4,dive,keys,endkeys,max=4"))
+
+	assert.Equal(t, "min=3", getValidateValues("min=2,dive,min=3"))
+	assert.Equal(t, "min=3,max=4", getValidateValues("dive,min=3,max=4,dive,min=4,max=5"))
+	assert.Equal(t, "max=4", getValidateValues("min=2,dive,keys,min=3,endkeys,max=4"))
+}
+
 func TestEverything(t *testing.T) {
 	// The order matters PostWithMetaData needs to be declared after post otherwise it will raise a
 	// `Block-scoped variable 'Post' used before its declaration.` typescript error.
@@ -1264,6 +1457,30 @@ export type User = z.infer<typeof UserSchema>
 `, StructToZodSchema(User{}))
 }
 
+func TestConvertArray(t *testing.T) {
+	type Array struct {
+		Arr [10]string
+	}
+	assert.Equal(t,
+		`export const ArraySchema = z.object({
+  Arr: z.string().array().length(10),
+})
+export type Array = z.infer<typeof ArraySchema>
+
+`, StructToZodSchema(Array{}))
+
+	type MultiArray struct {
+		Arr [10][20][30]string
+	}
+	assert.Equal(t,
+		`export const MultiArraySchema = z.object({
+  Arr: z.string().array().length(30).array().length(20).array().length(10),
+})
+export type MultiArray = z.infer<typeof MultiArraySchema>
+
+`, StructToZodSchema(MultiArray{}))
+}
+
 func TestConvertSlice(t *testing.T) {
 	type Foo struct {
 		Bar string
@@ -1308,102 +1525,103 @@ func TestConvertSliceWithValidations(t *testing.T) {
 	type Required struct {
 		Slice []string `validate:"required"`
 	}
-	assert.Equal(t, StructToZodSchema(Required{}), `export const RequiredSchema = z.object({
+	assert.Equal(t,
+		`export const RequiredSchema = z.object({
   Slice: z.string().array().nonempty(),
 })
 export type Required = z.infer<typeof RequiredSchema>
 
-`)
+`, StructToZodSchema(Required{}))
 
 	type Min struct {
 		Slice []string `validate:"min=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Min{}), `export const MinSchema = z.object({
+	assert.Equal(t, `export const MinSchema = z.object({
   Slice: z.string().array().min(1),
 })
 export type Min = z.infer<typeof MinSchema>
 
-`)
+`, StructToZodSchema(Min{}))
 
 	type Max struct {
 		Slice []string `validate:"max=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Max{}), `export const MaxSchema = z.object({
+	assert.Equal(t, `export const MaxSchema = z.object({
   Slice: z.string().array().max(1).nullable(),
 })
 export type Max = z.infer<typeof MaxSchema>
 
-`)
+`, StructToZodSchema(Max{}))
 
 	type Len struct {
 		Slice []string `validate:"len=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Len{}), `export const LenSchema = z.object({
+	assert.Equal(t, `export const LenSchema = z.object({
   Slice: z.string().array().length(1),
 })
 export type Len = z.infer<typeof LenSchema>
 
-`)
+`, StructToZodSchema(Len{}))
 
 	type Eq struct {
 		Slice []string `validate:"eq=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Eq{}), `export const EqSchema = z.object({
+	assert.Equal(t, `export const EqSchema = z.object({
   Slice: z.string().array().length(1),
 })
 export type Eq = z.infer<typeof EqSchema>
 
-`)
+`, StructToZodSchema(Eq{}))
 
 	type Gt struct {
 		Slice []string `validate:"gt=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Gt{}), `export const GtSchema = z.object({
+	assert.Equal(t, `export const GtSchema = z.object({
   Slice: z.string().array().min(2),
 })
 export type Gt = z.infer<typeof GtSchema>
 
-`)
+`, StructToZodSchema(Gt{}))
 
 	type Gte struct {
 		Slice []string `validate:"gte=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Gte{}), `export const GteSchema = z.object({
+	assert.Equal(t, `export const GteSchema = z.object({
   Slice: z.string().array().min(1),
 })
 export type Gte = z.infer<typeof GteSchema>
 
-`)
+`, StructToZodSchema(Gte{}))
 
 	type Lt struct {
 		Slice []string `validate:"lt=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Lt{}), `export const LtSchema = z.object({
+	assert.Equal(t, `export const LtSchema = z.object({
   Slice: z.string().array().max(0).nullable(),
 })
 export type Lt = z.infer<typeof LtSchema>
 
-`)
+`, StructToZodSchema(Lt{}))
 
 	type Lte struct {
 		Slice []string `validate:"lte=1"`
 	}
-	assert.Equal(t, StructToZodSchema(Lte{}), `export const LteSchema = z.object({
+	assert.Equal(t, `export const LteSchema = z.object({
   Slice: z.string().array().max(1).nullable(),
 })
 export type Lte = z.infer<typeof LteSchema>
 
-`)
+`, StructToZodSchema(Lte{}))
 
 	type Ne struct {
 		Slice []string `validate:"ne=0"`
 	}
-	assert.Equal(t, StructToZodSchema(Ne{}), `export const NeSchema = z.object({
+	assert.Equal(t, `export const NeSchema = z.object({
   Slice: z.string().array().refine((val) => val.length !== 0),
 })
 export type Ne = z.infer<typeof NeSchema>
 
-`)
+`, StructToZodSchema(Ne{}))
 
 	assert.Panics(t, func() {
 		type Bad struct {
@@ -1411,6 +1629,26 @@ export type Ne = z.infer<typeof NeSchema>
 		}
 		StructToZodSchema(Bad{})
 	})
+
+	type Dive1 struct {
+		Slice [][]string `validate:"dive,required"`
+	}
+	assert.Equal(t, `export const Dive1Schema = z.object({
+  Slice: z.string().array().nonempty().array().nullable(),
+})
+export type Dive1 = z.infer<typeof Dive1Schema>
+
+`, StructToZodSchema(Dive1{}))
+
+	type Dive2 struct {
+		Slice [][]string `validate:"required,dive,min=1"`
+	}
+	assert.Equal(t, `export const Dive2Schema = z.object({
+  Slice: z.string().array().min(1).array().nonempty(),
+})
+export type Dive2 = z.infer<typeof Dive2Schema>
+
+`, StructToZodSchema(Dive2{}))
 }
 
 func TestStructTime(t *testing.T) {
