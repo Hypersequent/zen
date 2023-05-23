@@ -529,14 +529,20 @@ func (c *Converter) validateNumber(validate string) string {
 
 			switch valName {
 			case "eq":
+				fallthrough
+			case "len":
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "gt":
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
 			case "gte":
+				fallthrough
+			case "min":
 				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
 			case "lt":
 				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
 			case "lte":
+				fallthrough
+			case "max":
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
 			case "ne":
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== %s)", valValue))
@@ -546,12 +552,6 @@ func (c *Converter) validateNumber(validate string) string {
 					panic(fmt.Sprintf("invalid oneof validation: %s", part))
 				}
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
-			case "min":
-				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
-			case "max":
-				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
-			case "len":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
 
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
