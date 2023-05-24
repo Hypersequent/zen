@@ -1,1 +1,3 @@
 .idea/
+tests/
+!tests/zod.test.ts

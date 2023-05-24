@@ -321,6 +321,9 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 		switch zodType {
 		case "string":
 			validateStr = c.validateString(validate)
+			if strings.Contains(validateStr, ".enum(") {
+				return "z" + validateStr
+			}
 		case "number":
 			validateStr = c.validateNumber(validate)
 		}
@@ -368,8 +371,20 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, name, validate string, 
 	}
 
 	var validateStr strings.Builder
-	if validate != "" {
-		parts := strings.Split(validate, ",")
+	validateCurrent := getValidateCurrent(validate)
+	if validateCurrent != "" {
+		parts := strings.Split(validateCurrent, ",")
+
+		// eq and ne should be at the end since they output a refine function
+		sort.SliceStable(parts, func(i, j int) bool {
+			if strings.HasPrefix(parts[i], "ne") {
+				return false
+			}
+			if strings.HasPrefix(parts[j], "ne") {
+				return true
+			}
+			return i < j
+		})
 
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
@@ -515,6 +530,21 @@ func (c *Converter) validateNumber(validate string) string {
 	var validateStr strings.Builder
 	parts := strings.Split(validate, ",")
 
+	// eq and ne should be at the end since they output a refine function
+	sort.SliceStable(parts, func(i, j int) bool {
+		if strings.HasPrefix(parts[i], "eq") || strings.HasPrefix(parts[i], "len") ||
+			strings.HasPrefix(parts[i], "ne") || strings.HasPrefix(parts[i], "oneof") ||
+			strings.HasPrefix(parts[i], "required") {
+			return false
+		}
+		if strings.HasPrefix(parts[j], "eq") || strings.HasPrefix(parts[j], "len") ||
+			strings.HasPrefix(parts[j], "ne") || strings.HasPrefix(parts[j], "oneof") ||
+			strings.HasPrefix(parts[j], "required") {
+			return true
+		}
+		return i < j
+	})
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 
@@ -528,8 +558,6 @@ func (c *Converter) validateNumber(validate string) string {
 			valValue := part[idx+1:]
 
 			switch valName {
-			case "eq", "len":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "gt":
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
 			case "gte", "min":
@@ -538,6 +566,8 @@ func (c *Converter) validateNumber(validate string) string {
 				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
 			case "lte", "max":
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
+			case "eq", "len":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "ne":
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== %s)", valValue))
 			case "oneof":
@@ -564,6 +594,17 @@ func (c *Converter) validateString(validate string) string {
 	var validateStr strings.Builder
 	parts := strings.Split(validate, ",")
 
+	// eq and ne should be at the end since they output a refine function
+	sort.SliceStable(parts, func(i, j int) bool {
+		if strings.HasPrefix(parts[i], "eq") || strings.HasPrefix(parts[i], "ne") {
+			return false
+		}
+		if strings.HasPrefix(parts[j], "eq") || strings.HasPrefix(parts[j], "ne") {
+			return true
+		}
+		return i < j
+	})
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		// We handle the parts which have = separately
@@ -577,10 +618,6 @@ func (c *Converter) validateString(validate string) string {
 			valValue := part[idx+1:]
 
 			switch valName {
-			case "eq":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
-			case "ne":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
 			case "oneof":
 				vals := splitParamsRegex.FindAllString(part[6:], -1)
 				for i := 0; i < len(vals); i++ {
@@ -590,7 +627,7 @@ func (c *Converter) validateString(validate string) string {
 					panic("oneof= must be followed by a list of values")
 				}
 				// const FishEnum = z.enum(["Salmon", "Tuna", "Trout"]);
-				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"])", strings.Join(vals, "\", \"")))
+				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"] as const)", strings.Join(vals, "\", \"")))
 			case "len":
 				validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
 			case "min":
@@ -619,6 +656,10 @@ func (c *Converter) validateString(validate string) string {
 				validateStr.WriteString(fmt.Sprintf(".endsWith(\"%s\")", valValue))
 			case "startswith":
 				validateStr.WriteString(fmt.Sprintf(".startsWith(\"%s\")", valValue))
+			case "eq":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
+			case "ne":
+				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
 
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
@@ -792,8 +833,8 @@ func getValidateCurrent(validate string) string {
 
 	if strings.HasPrefix(validate, "dive") {
 
-	} else if strings.Contains(validate, "dive") {
-		validateCurrent = strings.Split(validate, "dive")[1]
+	} else if strings.Contains(validate, ",dive") {
+		validateCurrent = strings.Split(validate, ",dive")[0]
 	} else {
 		validateCurrent = validate
 	}
