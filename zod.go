@@ -528,21 +528,15 @@ func (c *Converter) validateNumber(validate string) string {
 			valValue := part[idx+1:]
 
 			switch valName {
-			case "eq":
-				fallthrough
-			case "len":
+			case "eq", "len":
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "gt":
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
-			case "gte":
-				fallthrough
-			case "min":
+			case "gte", "min":
 				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
 			case "lt":
 				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
-			case "lte":
-				fallthrough
-			case "max":
+			case "lte", "max":
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
 			case "ne":
 				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== %s)", valValue))
