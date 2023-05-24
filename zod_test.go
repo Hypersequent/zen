@@ -1182,131 +1182,131 @@ export type User = z.infer<typeof UserSchema>
 }
 
 func TestMapWithValidations(t *testing.T) {
-	//	type Required struct {
-	//		Map map[string]string `validate:"required"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const RequiredSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 0, 'Empty map'),
-	//})
-	//export type Required = z.infer<typeof RequiredSchema>
-	//
-	//`, StructToZodSchema(Required{}))
-	//
-	//	type Min struct {
-	//		Map map[string]string `validate:"min=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const MinSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
-	//})
-	//export type Min = z.infer<typeof MinSchema>
-	//
-	//`, StructToZodSchema(Min{}))
-	//
-	//	type Max struct {
-	//		Map map[string]string `validate:"max=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const MaxSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
-	//})
-	//export type Max = z.infer<typeof MaxSchema>
-	//
-	//`, StructToZodSchema(Max{}))
-	//
-	//	type Len struct {
-	//		Map map[string]string `validate:"len=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const LenSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
-	//})
-	//export type Len = z.infer<typeof LenSchema>
-	//
-	//`, StructToZodSchema(Len{}))
-	//
-	//	type MinMax struct {
-	//		Map map[string]string `validate:"min=1,max=2"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const MinMaxSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
-	//})
-	//export type MinMax = z.infer<typeof MinMaxSchema>
-	//
-	//`, StructToZodSchema(MinMax{}))
-	//
-	//	type Eq struct {
-	//		Map map[string]string `validate:"eq=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const EqSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
-	//})
-	//export type Eq = z.infer<typeof EqSchema>
-	//
-	//`, StructToZodSchema(Eq{}))
-	//
-	//	type Ne struct {
-	//		Map map[string]string `validate:"ne=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const NeSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size').nullable(),
-	//})
-	//export type Ne = z.infer<typeof NeSchema>
-	//
-	//`, StructToZodSchema(Ne{}))
-	//
-	//	type Gt struct {
-	//		Map map[string]string `validate:"gt=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const GtSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 1, 'Map too small'),
-	//})
-	//export type Gt = z.infer<typeof GtSchema>
-	//
-	//`, StructToZodSchema(Gt{}))
-	//
-	//	type Gte struct {
-	//		Map map[string]string `validate:"gte=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const GteSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
-	//})
-	//export type Gte = z.infer<typeof GteSchema>
-	//
-	//`, StructToZodSchema(Gte{}))
-	//
-	//	type Lt struct {
-	//		Map map[string]string `validate:"lt=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const LtSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large').nullable(),
-	//})
-	//export type Lt = z.infer<typeof LtSchema>
-	//
-	//`, StructToZodSchema(Lt{}))
-	//
-	//	type Lte struct {
-	//		Map map[string]string `validate:"lte=1"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const LteSchema = z.object({
-	//  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
-	//})
-	//export type Lte = z.infer<typeof LteSchema>
-	//
-	//`, StructToZodSchema(Lte{}))
-	//
-	//	type Bad struct {
-	//		Map map[string]string `validate:"bad=1"`
-	//	}
-	//	assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+	type Required struct {
+		Map map[string]string `validate:"required"`
+	}
+	assert.Equal(t,
+		`export const RequiredSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 0, 'Empty map'),
+})
+export type Required = z.infer<typeof RequiredSchema>
+
+`, StructToZodSchema(Required{}))
+
+	type Min struct {
+		Map map[string]string `validate:"min=1"`
+	}
+	assert.Equal(t,
+		`export const MinSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type Min = z.infer<typeof MinSchema>
+
+`, StructToZodSchema(Min{}))
+
+	type Max struct {
+		Map map[string]string `validate:"max=1"`
+	}
+	assert.Equal(t,
+		`export const MaxSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+})
+export type Max = z.infer<typeof MaxSchema>
+
+`, StructToZodSchema(Max{}))
+
+	type Len struct {
+		Map map[string]string `validate:"len=1"`
+	}
+	assert.Equal(t,
+		`export const LenSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type Len = z.infer<typeof LenSchema>
+
+`, StructToZodSchema(Len{}))
+
+	type MinMax struct {
+		Map map[string]string `validate:"min=1,max=2"`
+	}
+	assert.Equal(t,
+		`export const MinMaxSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
+})
+export type MinMax = z.infer<typeof MinMaxSchema>
+
+`, StructToZodSchema(MinMax{}))
+
+	type Eq struct {
+		Map map[string]string `validate:"eq=1"`
+	}
+	assert.Equal(t,
+		`export const EqSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type Eq = z.infer<typeof EqSchema>
+
+`, StructToZodSchema(Eq{}))
+
+	type Ne struct {
+		Map map[string]string `validate:"ne=1"`
+	}
+	assert.Equal(t,
+		`export const NeSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size').nullable(),
+})
+export type Ne = z.infer<typeof NeSchema>
+
+`, StructToZodSchema(Ne{}))
+
+	type Gt struct {
+		Map map[string]string `validate:"gt=1"`
+	}
+	assert.Equal(t,
+		`export const GtSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 1, 'Map too small'),
+})
+export type Gt = z.infer<typeof GtSchema>
+
+`, StructToZodSchema(Gt{}))
+
+	type Gte struct {
+		Map map[string]string `validate:"gte=1"`
+	}
+	assert.Equal(t,
+		`export const GteSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type Gte = z.infer<typeof GteSchema>
+
+`, StructToZodSchema(Gte{}))
+
+	type Lt struct {
+		Map map[string]string `validate:"lt=1"`
+	}
+	assert.Equal(t,
+		`export const LtSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large').nullable(),
+})
+export type Lt = z.infer<typeof LtSchema>
+
+`, StructToZodSchema(Lt{}))
+
+	type Lte struct {
+		Map map[string]string `validate:"lte=1"`
+	}
+	assert.Equal(t,
+		`export const LteSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+})
+export type Lte = z.infer<typeof LteSchema>
+
+`, StructToZodSchema(Lte{}))
+
+	type Bad struct {
+		Map map[string]string `validate:"bad=1"`
+	}
+	assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 
 	type Dive1 struct {
 		Map map[string]string `validate:"dive,min=2"`
