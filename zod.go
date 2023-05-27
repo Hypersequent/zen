@@ -22,41 +22,18 @@ func NewConverter(custom map[string]CustomFn) Converter {
 func (c *Converter) Convert(input interface{}) string {
 	t := reflect.TypeOf(input)
 
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
 
-	output := strings.Builder{}
-	var sorted []entry
-	for _, ent := range c.outputs {
-		sorted = append(sorted, ent)
-	}
-
-	sort.Sort(ByOrder(sorted))
-
-	for _, ent := range sorted {
-		output.WriteString(ent.data)
-		output.WriteString("\n\n")
-	}
-	return output.String()
+	return c.Export()
 }
 
 func (c *Converter) ConvertSlice(inputs []interface{}) string {
 	for _, input := range inputs {
 		t := reflect.TypeOf(input)
-		c.addSchema(t.Name(), c.convertStructTopLevel(t))
-	}
-	output := strings.Builder{}
-	var sorted []entry
-	for _, ent := range c.outputs {
-		sorted = append(sorted, ent)
+		c.AddSchema(t.Name(), c.convertStructTopLevel(t))
 	}
 
-	sort.Sort(ByOrder(sorted))
-
-	for _, ent := range sorted {
-		output.WriteString(ent.data)
-		output.WriteString("\n\n")
-	}
-	return output.String()
+	return c.Export()
 }
 
 func StructToZodSchema(input interface{}) string {
@@ -67,21 +44,9 @@ func StructToZodSchema(input interface{}) string {
 
 	t := reflect.TypeOf(input)
 
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
 
-	output := strings.Builder{}
-	var sorted []entry
-	for _, ent := range c.outputs {
-		sorted = append(sorted, ent)
-	}
-
-	sort.Sort(ByOrder(sorted))
-
-	for _, ent := range sorted {
-		output.WriteString(ent.data)
-		output.WriteString("\n\n")
-	}
-	return output.String()
+	return c.Export()
 }
 
 func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
@@ -92,21 +57,9 @@ func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
 
 	t := reflect.TypeOf(input)
 
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
 
-	output := strings.Builder{}
-	var sorted []entry
-	for _, ent := range c.outputs {
-		sorted = append(sorted, ent)
-	}
-
-	sort.Sort(ByOrder(sorted))
-
-	for _, ent := range sorted {
-		output.WriteString(ent.data)
-		output.WriteString("\n\n")
-	}
-	return output.String()
+	return c.Export()
 }
 
 var typeMapping = map[reflect.Kind]string{
@@ -150,7 +103,7 @@ type Converter struct {
 	custom  map[string]CustomFn
 }
 
-func (c *Converter) addSchema(name string, data string) {
+func (c *Converter) AddSchema(name string, data string) {
 	// First check if the object already exists. If it does do not replace. This is needed for second order
 	_, ok := c.outputs[name]
 	if !ok {
@@ -158,6 +111,22 @@ func (c *Converter) addSchema(name string, data string) {
 		c.outputs[name] = entry{order, data}
 		c.structs = order + 1
 	}
+}
+
+func (c *Converter) Export() string {
+	output := strings.Builder{}
+	var sorted []entry
+	for _, ent := range c.outputs {
+		sorted = append(sorted, ent)
+	}
+
+	sort.Sort(ByOrder(sorted))
+
+	for _, ent := range sorted {
+		output.WriteString(ent.data)
+		output.WriteString("\n\n")
+	}
+	return output.String()
 }
 
 func schemaName(prefix, name string) string {
@@ -302,7 +271,7 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
 			return "z.coerce.date()" + validateStr
 		} else {
-			c.addSchema(name, c.convertStructTopLevel(t))
+			c.AddSchema(name, c.convertStructTopLevel(t))
 			return schemaName(c.prefix, name)
 		}
 	}
