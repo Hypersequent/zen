@@ -19,10 +19,16 @@ func NewConverter(custom map[string]CustomFn) Converter {
 	return c
 }
 
+func (c *Converter) AddType(input interface{}) {
+	t := reflect.TypeOf(input)
+
+	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+}
+
 func (c *Converter) Convert(input interface{}) string {
 	t := reflect.TypeOf(input)
 
-	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
+	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	return c.Export()
 }
@@ -30,7 +36,7 @@ func (c *Converter) Convert(input interface{}) string {
 func (c *Converter) ConvertSlice(inputs []interface{}) string {
 	for _, input := range inputs {
 		t := reflect.TypeOf(input)
-		c.AddSchema(t.Name(), c.convertStructTopLevel(t))
+		c.addSchema(t.Name(), c.convertStructTopLevel(t))
 	}
 
 	return c.Export()
@@ -44,7 +50,7 @@ func StructToZodSchema(input interface{}) string {
 
 	t := reflect.TypeOf(input)
 
-	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
+	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	return c.Export()
 }
@@ -57,7 +63,7 @@ func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
 
 	t := reflect.TypeOf(input)
 
-	c.AddSchema(t.Name(), c.convertStructTopLevel(t))
+	c.addSchema(t.Name(), c.convertStructTopLevel(t))
 
 	return c.Export()
 }
@@ -103,7 +109,7 @@ type Converter struct {
 	custom  map[string]CustomFn
 }
 
-func (c *Converter) AddSchema(name string, data string) {
+func (c *Converter) addSchema(name string, data string) {
 	// First check if the object already exists. If it does do not replace. This is needed for second order
 	_, ok := c.outputs[name]
 	if !ok {
@@ -271,7 +277,7 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
 			return "z.coerce.date()" + validateStr
 		} else {
-			c.AddSchema(name, c.convertStructTopLevel(t))
+			c.addSchema(name, c.convertStructTopLevel(t))
 			return schemaName(c.prefix, name)
 		}
 	}
