@@ -1420,9 +1420,6 @@ func TestEverything(t *testing.T) {
 		MapWithStruct                 map[string]PostWithMetaData
 	}
 
-	out := StructToZodSchema(User{})
-	fmt.Println(out)
-
 	assert.Equal(t,
 		`export const PostSchema = z.object({
   Title: z.string(),
