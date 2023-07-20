@@ -1419,6 +1419,7 @@ func TestEverything(t *testing.T) {
 		VeryNewPost                   Post
 		MapWithStruct                 map[string]PostWithMetaData
 	}
+
 	assert.Equal(t,
 		`export const PostSchema = z.object({
   Title: z.string(),
@@ -1812,4 +1813,75 @@ export type User = z.infer<typeof UserSchema>
 
 `,
 		c.Convert(User{}))
+}
+
+func TestRecursive1(t *testing.T) {
+	type NestedItem struct {
+		ID        int           `json:"id"`
+		Title     string        `json:"title"`
+		Pos       int           `json:"pos"`
+		ParentID  int           `json:"parent_id"`
+		ProjectID int           `json:"project_id"`
+		Children  []*NestedItem `json:"children"`
+	}
+
+	assert.Equal(t, `export type NestedItem = {
+  id: number,
+  title: string,
+  pos: number,
+  parent_id: number,
+  project_id: number,
+  children: NestedItem[] | null,
+}
+export const NestedItemSchema: z.ZodType<NestedItem> = z.object({
+  id: z.number(),
+  title: z.string(),
+  pos: z.number(),
+  parent_id: z.number(),
+  project_id: z.number(),
+  children: z.lazy(() => NestedItemSchema).array().nullable(),
+})
+
+`, StructToZodSchema(NestedItem{}))
+}
+
+func TestRecursive2(t *testing.T) {
+	type Node struct {
+		Value int   `json:"value"`
+		Next  *Node `json:"next"`
+	}
+
+	type Parent struct {
+		Child *Node `json:"child"`
+	}
+
+	assert.Equal(t, `export type Node = {
+  value: number,
+  next: Node | null,
+}
+export const NodeSchema: z.ZodType<Node> = z.object({
+  value: z.number(),
+  next: z.lazy(() => NodeSchema).nullable(),
+})
+
+export const ParentSchema = z.object({
+  child: NodeSchema.nullable(),
+})
+export type Parent = z.infer<typeof ParentSchema>
+
+`, StructToZodSchema(Parent{}))
+}
+
+type TestCyclicA struct {
+	B *TestCyclicB
+}
+
+type TestCyclicB struct {
+	A *TestCyclicA
+}
+
+func TestCyclic(t *testing.T) {
+	assert.Panics(t, func() {
+		StructToZodSchema(TestCyclicA{})
+	})
 }

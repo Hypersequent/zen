@@ -22,21 +22,26 @@ func NewConverter(custom map[string]CustomFn) Converter {
 func (c *Converter) AddType(input interface{}) {
 	t := reflect.TypeOf(input)
 
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	name := t.Name()
+	if _, ok := c.outputs[name]; ok {
+		return
+	}
+
+	data := c.convertStructTopLevel(t)
+	order := c.structs
+	c.outputs[name] = entry{order, data}
+	c.structs = order + 1
 }
 
 func (c *Converter) Convert(input interface{}) string {
-	t := reflect.TypeOf(input)
-
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddType(input)
 
 	return c.Export()
 }
 
 func (c *Converter) ConvertSlice(inputs []interface{}) string {
 	for _, input := range inputs {
-		t := reflect.TypeOf(input)
-		c.addSchema(t.Name(), c.convertStructTopLevel(t))
+		c.AddType(input)
 	}
 
 	return c.Export()
@@ -48,9 +53,7 @@ func StructToZodSchema(input interface{}) string {
 		outputs: make(map[string]entry),
 	}
 
-	t := reflect.TypeOf(input)
-
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddType(input)
 
 	return c.Export()
 }
@@ -61,9 +64,7 @@ func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
 		outputs: make(map[string]entry),
 	}
 
-	t := reflect.TypeOf(input)
-
-	c.addSchema(t.Name(), c.convertStructTopLevel(t))
+	c.AddType(input)
 
 	return c.Export()
 }
@@ -102,11 +103,17 @@ func (a ByOrder) Less(i, j int) bool { return a[i].order < a[j].order }
 
 type CustomFn func(*Converter, reflect.Type, string, string, string, int) string
 
+type Meta struct {
+	Name    string
+	SelfRef bool
+}
+
 type Converter struct {
 	prefix  string
 	structs int
 	outputs map[string]entry
 	custom  map[string]CustomFn
+	stack   []Meta
 }
 
 func (c *Converter) addSchema(name string, data string) {
@@ -177,14 +184,29 @@ func (c *Converter) convertStructTopLevel(t reflect.Type) string {
 	output := strings.Builder{}
 
 	name := t.Name()
+	c.stack = append(c.stack, Meta{name, false})
 
-	output.WriteString(fmt.Sprintf(
-		`export const %s = %s
+	data := c.convertStruct(t, 0)
+	fullName := c.prefix + name
+
+	top := c.stack[len(c.stack)-1]
+	if top.SelfRef {
+		output.WriteString(fmt.Sprintf(`export type %s = %s
+`, fullName, c.getTypeStruct(t, 0)))
+
+		output.WriteString(fmt.Sprintf(
+			`export const %s: z.ZodType<%s> = %s`, schemaName(c.prefix, name), fullName, data))
+	} else {
+		output.WriteString(fmt.Sprintf(
+			`export const %s = %s
 `,
-		schemaName(c.prefix, name), c.convertStruct(t, 0)))
+			schemaName(c.prefix, name), data))
 
-	output.WriteString(fmt.Sprintf(`export type %s%s = z.infer<typeof %s%sSchema>`,
-		c.prefix, name, c.prefix, name))
+		output.WriteString(fmt.Sprintf(`export type %s = z.infer<typeof %s>`,
+			fullName, schemaName(c.prefix, name)))
+	}
+
+	c.stack = c.stack[:len(c.stack)-1]
 
 	return output.String()
 }
@@ -208,6 +230,29 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 
 	output.WriteString(indentation(indent))
 	output.WriteString(`})`)
+
+	return output.String()
+}
+
+func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
+	output := strings.Builder{}
+
+	output.WriteString(`{
+`)
+
+	fields := input.NumField()
+	for i := 0; i < fields; i++ {
+		field := input.Field(i)
+		optional := isOptional(field)
+		nullable := isNullable(field)
+
+		line := c.getTypeField(field, indent+1, optional, nullable)
+
+		output.WriteString(line)
+	}
+
+	output.WriteString(indentation(indent))
+	output.WriteString(`}`)
 
 	return output.String()
 }
@@ -277,6 +322,12 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
 			return "z.coerce.date()" + validateStr
 		} else {
+			if c.stack[len(c.stack)-1].Name == name {
+				c.stack[len(c.stack)-1].SelfRef = true
+				return fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name))
+			}
+			// throws panic if there is a cycle
+			detectCycle(name, c.stack)
 			c.addSchema(name, c.convertStructTopLevel(t))
 			return schemaName(c.prefix, name)
 		}
@@ -305,6 +356,40 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 	}
 
 	return fmt.Sprintf("z.%s()%s", zodType, validateStr)
+}
+
+func (c *Converter) getType(t reflect.Type, name string, indent int) string {
+	if t.Kind() == reflect.Ptr {
+		inner := t.Elem()
+		return c.getType(inner, name, indent)
+	}
+
+	// TODO: handle types for custom types
+
+	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		return c.getTypeSliceAndArray(t, name, indent)
+	}
+
+	if t.Kind() == reflect.Struct {
+		// Handle nested un-named structs - these are inline.
+		if t.Name() == "" {
+			return c.getTypeStruct(t, indent)
+		} else if t.Name() == "Time" {
+			return "date"
+		} else {
+			return c.prefix + name
+		}
+	}
+
+	if t.Kind() == reflect.Map {
+		return c.getTypeMap(t, name, indent)
+	}
+
+	zodType, ok := typeMapping[t.Kind()]
+	if !ok {
+		panic(fmt.Sprint("cannot handle: ", t.Kind()))
+	}
+	return zodType
 }
 
 func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) string {
@@ -336,6 +421,40 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		c.ConvertType(f.Type, typeName(f.Type), f.Tag.Get("validate"), indent),
 		optionalCall,
 		nullableCall)
+}
+
+func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) string {
+	name := fieldName(f)
+
+	// fields named `-` are not exported to JSON so don't export types
+	if name == "-" {
+		return ""
+	}
+
+	// because nullability is processed before custom types, this makes sure
+	// the custom type has control over nullability.
+	fullName, _ := getFullName(f.Type)
+	_, isCustom := c.custom[fullName]
+
+	optionalCallPre := ""
+	optionalCallUndef := ""
+	if optional {
+		optionalCallPre = "?"
+		optionalCallUndef = " | undefined"
+	}
+	nullableCall := ""
+	if nullable && !isCustom {
+		nullableCall = " | null"
+	}
+
+	return fmt.Sprintf(
+		"%s%s%s: %s%s%s,\n",
+		indentation(indent),
+		name,
+		optionalCallPre,
+		c.getType(f.Type, typeName(f.Type), indent),
+		nullableCall,
+		optionalCallUndef)
 }
 
 func (c *Converter) convertSliceAndArray(t reflect.Type, name, validate string, indent int) string {
@@ -404,6 +523,12 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, name, validate string, 
 		c.ConvertType(t.Elem(), name, getValidateAfterDive(validate), indent), validateStr.String())
 }
 
+func (c *Converter) getTypeSliceAndArray(t reflect.Type, name string, indent int) string {
+	return fmt.Sprintf(
+		"%s[]",
+		c.getType(t.Elem(), name, indent))
+}
+
 func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int) string {
 	var validateStr strings.Builder
 	if validate != "" {
@@ -445,6 +570,12 @@ func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int
 		validateStr.String())
 }
 
+func (c *Converter) getTypeMap(t reflect.Type, name string, indent int) string {
+	return fmt.Sprintf(`Record<%s, %s>`,
+		c.getType(t.Key(), name, indent),
+		c.getType(t.Elem(), name, indent))
+}
+
 func getValidateAfterDive(validate string) string {
 	// select part of validate string after dive, if it exists
 	var validateNext string
@@ -462,7 +593,10 @@ func getValidateAfterDive(validate string) string {
 	return validateNext
 }
 
-// These are to be used together directly after the dive tag and tells the validator that anything between 'keys' and 'endkeys' applies to the keys of a map and not the values; think of it like the 'dive' tag, but for map keys instead of values. Multidimensional nesting is also supported, each level you wish to validate will require another 'keys' and 'endkeys' tag. These tags are only valid for maps.
+// These are to be used together directly after the dive tag and tells the validator that anything between
+// 'keys' and 'endkeys' applies to the keys of a map and not the values; think of it like the 'dive' tag,
+// but for map keys instead of values. Multidimensional nesting is also supported, each level you wish to
+// validate will require another 'keys' and 'endkeys' tag. These tags are only valid for maps.
 //
 // Usage: dive,keys,othertagvalidation(s),endkeys,valuevalidationtags
 func getValidateKeys(validate string) string {
@@ -841,4 +975,21 @@ func isOptional(field reflect.StructField) bool {
 
 func indentation(level int) string {
 	return strings.Repeat(" ", level*2)
+}
+
+func detectCycle(name string, stack []Meta) {
+	var found bool
+	var cycle strings.Builder
+	for _, m := range stack {
+		cycle.WriteString(m.Name)
+		if m.Name == name {
+			found = true
+			break
+		}
+		cycle.WriteString(" -> ")
+	}
+
+	if found {
+		panic(fmt.Sprintf("circular dependency detected: %s", cycle.String()))
+	}
 }
