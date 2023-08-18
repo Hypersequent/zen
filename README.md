@@ -4,69 +4,24 @@ Zod + Generate = Zen
 
 Converts Go structs with go-validator validations to Zod schemas.
 
-Both usage with and without validations is supported.
+Zen supports self-referential types.
 
 ## Usage:
 
-### Without validations
-
-```go
-type Post struct {
-	Title string
-}
-type User struct {
-	Name       string
-	Nickname   *string // pointers become optional
-	Age        int
-	Height     float64
-	Tags       []string
-	Favourites []struct { // nested structs are kept inline
-		Name string
-	}
-	Posts []Post // external structs are emitted as separate exports
-}
-StructToZodSchema(User{})
-```
-
-Outputs:
-
-```typescript
-export const PostSchema = z.object({
-	title: z.string(),
-});
-export type Post = z.infer<typeof PostSchema>;
-
-export const UserSchema = z.object({
-	name: z.string(),
-	nickname: z.string().optional(),
-	age: z.number(),
-	height: z.number(),
-	tags: z.string().array(),
-	favourites: z
-		.object({
-			name: z.string(),
-		})
-		.array(),
-	posts: PostSchema.array(),
-});
-export type User = z.infer<typeof UserSchema>;
-```
-
-### With go validator validations
 ```go
 type Post struct {
 	Title string `validate:"required"`
 }
 type User struct {
 	Name       string `validate:"required"`
-	Nickname   *string 													// pointers become optional
+	Nickname   *string // pointers become optional
 	Age        int 	 `validate:"min=18"`
 	Height     float64 `validate:"min=0,max=3"`
 	Tags       []string `validate:"min=1"`
-	Favourites []struct { 											// nested structs are kept inline
+	Favourites []struct { // nested structs are kept inline
 		Name string `validate:"required"`
 	}
-	Posts []Post 																// external structs are emitted as separate exports
+	Posts []Post // external structs are emitted as separate exports
 }
 StructToZodSchema(User{})
 ```
@@ -92,6 +47,8 @@ export const UserSchema = z.object({
 })
 export type User = z.infer<typeof UserSchema>
 ```
+
+It also works without any validations.
 
 ### How we use it at Hypersequent
 
@@ -243,9 +200,9 @@ indent level is for passing to other converter APIs.
 
 ## License
 
-- Distributed under MIT License, Copyright (c) Hypersequent DMCC, please see license file within the code for more details.
+- Distributed under MIT License, please see license file within the code for more details.
 
 ## Credits
 
-- Inspired by [supervillain](https://github.com/Southclaws/supervillain), MIT License, Copyright (c) Barnaby "Southclaws" Keene
-- Uses [validator](https://github.com/go-playground/validator), MIT License, Copyright (c) 2015 Dean Karn
+- Inspired by [supervillain](https://github.com/Southclaws/supervillain)
+- Uses several regexes from [validator](https://github.com/go-playground/validator)
