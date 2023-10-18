@@ -777,6 +777,7 @@ func (c *Converter) validateString(validate string) string {
 			switch part {
 			case "required":
 				validateStr.WriteString(".min(1)")
+			case "omitempty":
 			case "email":
 				// email is more readable than copying the regex in regexes.go but could be incompatible
 				// Also there is an open issue https://github.com/go-playground/validator/issues/517
