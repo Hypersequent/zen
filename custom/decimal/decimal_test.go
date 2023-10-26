@@ -1,12 +1,12 @@
 package decimal_test
 
 import (
-	"github.com/hypersequent/zen"
 	"testing"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/hypersequent/zen"
 	customDecimal "github.com/hypersequent/zen/custom/decimal"
 )
 

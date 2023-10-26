@@ -262,6 +262,101 @@ export type User = z.infer<typeof UserSchema>
 		StructToZodSchema(User{}))
 }
 
+func TestNullableWithValidations(t *testing.T) {
+	type User struct {
+		Name string `validate:"required"`
+
+		PtrMapOptionalNullable1 *map[string]interface{} `json:",omitempty"`
+		PtrMapOptionalNullable2 *map[string]interface{} `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		PtrMap1                 *map[string]interface{} `validate:"min=2,max=5"`
+		PtrMap2                 *map[string]interface{} `json:",omitempty" validate:"min=2,max=5"`
+		PtrMapNullable          *map[string]interface{} `validate:"omitempty,min=2,max=5"`
+
+		MapOptional1 map[string]interface{} `json:",omitempty"`
+		MapOptional2 map[string]interface{} `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		Map1         map[string]interface{} `validate:"min=2,max=5"`
+		Map2         map[string]interface{} `json:",omitempty" validate:"min=2,max=5"`
+		MapNullable  map[string]interface{} `validate:"omitempty,min=2,max=5"`
+
+		PtrSliceOptionalNullable1 *[]string `json:",omitempty"`
+		PtrSliceOptionalNullable2 *[]string `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		PtrSlice1                 *[]string `validate:"min=2,max=5"`
+		PtrSlice2                 *[]string `json:",omitempty" validate:"min=2,max=5"`
+		PtrSliceNullable          *[]string `validate:"omitempty,min=2,max=5"`
+
+		SliceOptional1 []string `json:",omitempty"`
+		SliceOptional2 []string `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		Slice1         []string `validate:"min=2,max=5"`
+		Slice2         []string `json:",omitempty" validate:"min=2,max=5"`
+		SliceNullable  []string `validate:"omitempty,min=2,max=5"`
+
+		PtrIntOptional1 *int `json:",omitempty"`
+		PtrIntOptional2 *int `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		PtrInt1         *int `validate:"min=2,max=5"`
+		PtrInt2         *int `json:",omitempty" validate:"min=2,max=5"`
+		PtrIntNullable  *int `validate:"omitempty,min=2,max=5"`
+
+		// Not handled by zen for now
+		// IntOptionalNullable int `json:",omitempty"`
+		// Int1                int `validate:"min=2,max=5"`
+		// Int2                int `json:",omitempty" validate:"min=2,max=5"`
+		// IntNullable1        int `validate:"omitempty,min=2,max=5"`
+		// IntNullable2        int `json:",omitempty" validate:"omitempty,min=2,max=5"`
+
+		PtrStringOptional1 *string `json:",omitempty"`
+		PtrStringOptional2 *string `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		PtrString1         *string `validate:"min=2,max=5"`
+		PtrString2         *string `json:",omitempty" validate:"min=2,max=5"`
+		PtrStringNullable  *string `validate:"omitempty,min=2,max=5"`
+
+		// Not handled by zen for now
+		// StringOptionalNullable string `json:",omitempty"`
+		// String1                string `validate:"min=2,max=5"`
+		// String2                string `json:",omitempty" validate:"min=2,max=5"`
+		// StringNullable1        string `validate:"omitempty,min=2,max=5"`
+		// StringNullable2        string `json:",omitempty" validate:"omitempty,min=2,max=5"`
+	}
+
+	assert.Equal(t,
+		`export const UserSchema = z.object({
+  Name: z.string().min(1),
+  PtrMapOptionalNullable1: z.record(z.string(), z.any()).optional().nullable(),
+  PtrMapOptionalNullable2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').optional().nullable(),
+  PtrMap1: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
+  PtrMap2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
+  PtrMapNullable: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').nullable(),
+  MapOptional1: z.record(z.string(), z.any()).optional(),
+  MapOptional2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').optional(),
+  Map1: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
+  Map2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
+  MapNullable: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').nullable(),
+  PtrSliceOptionalNullable1: z.string().array().optional().nullable(),
+  PtrSliceOptionalNullable2: z.string().array().min(2).max(5).optional().nullable(),
+  PtrSlice1: z.string().array().min(2).max(5),
+  PtrSlice2: z.string().array().min(2).max(5),
+  PtrSliceNullable: z.string().array().min(2).max(5).nullable(),
+  SliceOptional1: z.string().array().optional(),
+  SliceOptional2: z.string().array().min(2).max(5).optional(),
+  Slice1: z.string().array().min(2).max(5),
+  Slice2: z.string().array().min(2).max(5),
+  SliceNullable: z.string().array().min(2).max(5).nullable(),
+  PtrIntOptional1: z.number().optional(),
+  PtrIntOptional2: z.number().gte(2).lte(5).optional(),
+  PtrInt1: z.number().gte(2).lte(5),
+  PtrInt2: z.number().gte(2).lte(5),
+  PtrIntNullable: z.number().gte(2).lte(5).nullable(),
+  PtrStringOptional1: z.string().optional(),
+  PtrStringOptional2: z.string().min(2).max(5).optional(),
+  PtrString1: z.string().min(2).max(5),
+  PtrString2: z.string().min(2).max(5),
+  PtrStringNullable: z.string().min(2).max(5).nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+
+`,
+		StructToZodSchema(User{}))
+}
+
 func TestStringValidations(t *testing.T) {
 	type Eq struct {
 		Name string `validate:"eq=hello"`
@@ -1209,7 +1304,7 @@ export type Min = z.infer<typeof MinSchema>
 	}
 	assert.Equal(t,
 		`export const MaxSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
 })
 export type Max = z.infer<typeof MaxSchema>
 
@@ -1253,7 +1348,7 @@ export type Eq = z.infer<typeof EqSchema>
 	}
 	assert.Equal(t,
 		`export const NeSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size').nullable(),
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size'),
 })
 export type Ne = z.infer<typeof NeSchema>
 
@@ -1286,7 +1381,7 @@ export type Gte = z.infer<typeof GteSchema>
 	}
 	assert.Equal(t,
 		`export const LtSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large').nullable(),
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large'),
 })
 export type Lt = z.infer<typeof LtSchema>
 
@@ -1297,7 +1392,7 @@ export type Lt = z.infer<typeof LtSchema>
 	}
 	assert.Equal(t,
 		`export const LteSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large').nullable(),
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
 })
 export type Lte = z.infer<typeof LteSchema>
 
@@ -1640,7 +1735,7 @@ export type Min = z.infer<typeof MinSchema>
 		Slice []string `validate:"max=1"`
 	}
 	assert.Equal(t, `export const MaxSchema = z.object({
-  Slice: z.string().array().max(1).nullable(),
+  Slice: z.string().array().max(1),
 })
 export type Max = z.infer<typeof MaxSchema>
 
@@ -1690,7 +1785,7 @@ export type Gte = z.infer<typeof GteSchema>
 		Slice []string `validate:"lt=1"`
 	}
 	assert.Equal(t, `export const LtSchema = z.object({
-  Slice: z.string().array().max(0).nullable(),
+  Slice: z.string().array().max(0),
 })
 export type Lt = z.infer<typeof LtSchema>
 
@@ -1700,7 +1795,7 @@ export type Lt = z.infer<typeof LtSchema>
 		Slice []string `validate:"lte=1"`
 	}
 	assert.Equal(t, `export const LteSchema = z.object({
-  Slice: z.string().array().max(1).nullable(),
+  Slice: z.string().array().max(1),
 })
 export type Lte = z.infer<typeof LteSchema>
 

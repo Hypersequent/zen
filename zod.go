@@ -296,6 +296,8 @@ func (c *Converter) handleCustomType(t reflect.Type, name, validate string, inde
 func (c *Converter) ConvertType(t reflect.Type, name string, validate string, indent int) string {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()
+		validate = strings.TrimPrefix(validate, "omitempty")
+		validate = strings.TrimPrefix(validate, ",")
 		return c.ConvertType(inner, name, validate, indent)
 	}
 
@@ -337,6 +339,7 @@ func (c *Converter) ConvertType(t reflect.Type, name string, validate string, in
 		return c.convertMap(t, name, validate, indent)
 	}
 
+	// boolean, number, string, any
 	zodType, ok := typeMapping[t.Kind()]
 	if !ok {
 		panic(fmt.Sprint("cannot handle: ", t.Kind()))
@@ -482,7 +485,8 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, name, validate string, 
 
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
-			if part == "dive" {
+			if part == "omitempty" {
+			} else if part == "dive" {
 				break
 			} else if part == "required" {
 				validateStr.WriteString(".nonempty()")
@@ -536,7 +540,8 @@ func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int
 
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
-			if part == "dive" {
+			if part == "omitempty" {
+			} else if part == "dive" {
 				break
 			} else if part == "required" {
 				validateStr.WriteString(".refine((val) => Object.keys(val).length > 0, 'Empty map')")
@@ -635,6 +640,8 @@ func getValidateValues(validate string) string {
 	return validateValues
 }
 
+// not implementing omitempty for numbers and strings
+// could support unusual cases like `validate:"omitempty,min=3,max=5"`
 func (c *Converter) validateNumber(validate string) string {
 	var validateStr strings.Builder
 	parts := strings.Split(validate, ",")
@@ -689,10 +696,14 @@ func (c *Converter) validateNumber(validate string) string {
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
 			}
-		} else if part == "required" {
-			validateStr.WriteString(".refine((val) => val !== 0)")
 		} else {
-			panic(fmt.Sprintf("unknown validation: %s", part))
+			switch part {
+			case "omitempty":
+			case "required":
+				validateStr.WriteString(".refine((val) => val !== 0)")
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
 		}
 	}
 
@@ -775,9 +786,9 @@ func (c *Converter) validateString(validate string) string {
 			}
 		} else {
 			switch part {
+			case "omitempty":
 			case "required":
 				validateStr.WriteString(".min(1)")
-			case "omitempty":
 			case "email":
 				// email is more readable than copying the regex in regexes.go but could be incompatible
 				// Also there is an open issue https://github.com/go-playground/validator/issues/517
@@ -893,6 +904,13 @@ func isNullable(field reflect.StructField) bool {
 	if isInterface(field) || strings.Contains(validateCurrent, "required") {
 		return false
 	}
+
+	// If some comparison is present min=1 or max=2 or len=4 etc. then go-validator requires the value
+	// to be non-nil unless omitempty is also present
+	if strings.Contains(validateCurrent, "=") && !strings.Contains(validateCurrent, "omitempty") {
+		return false
+	}
+
 	// pointers can be nil, which are mapped to null in JS/TS.
 	if field.Type.Kind() == reflect.Ptr {
 		// However, if a pointer field is tagged with "omitempty", it usually cannot be exported as "null"
@@ -903,38 +921,16 @@ func isNullable(field reflect.StructField) bool {
 			k := field.Type.Elem().Kind()
 			return k == reflect.Ptr || k == reflect.Slice || k == reflect.Map
 		}
+
 		return true
 	}
+
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
-		for _, part := range strings.Split(validateCurrent, ",") {
-			part = strings.TrimSpace(part)
-			if strings.ContainsRune(part, '=') {
-				idx := strings.Index(part, "=")
-				if idx == 0 || idx == len(part)-1 {
-					panic(fmt.Sprintf("invalid validation: %s", part))
-				}
-
-				valName := part[:idx]
-				valValue := part[idx+1:]
-
-				if (valName == "len" || valName == "min" || valName == "eq" || valName == "gte") && valValue != "0" ||
-					valName == "ne" && valValue == "0" ||
-					valName == "gt" {
-					return false
-				}
-
-				if (valName == "max" || valName == "lte") && valValue == "0" ||
-					valName == "lt" && (valValue == "1" || valValue == "0") ||
-					(valName == "eq" || valName == "len") && valValue == "0" {
-					return true
-				}
-			}
-		}
-
 		// unless there are also optional in which case they are no longer nullable
 		return !strings.Contains(field.Tag.Get("json"), "omitempty")
 	}
+
 	return false
 }
 
@@ -942,7 +938,6 @@ func getValidateCurrent(validate string) string {
 	var validateCurrent string
 
 	if strings.HasPrefix(validate, "dive") {
-
 	} else if strings.Contains(validate, ",dive") {
 		validateCurrent = strings.Split(validate, ",dive")[0]
 	} else {
@@ -962,6 +957,8 @@ func isInterface(field reflect.StructField) bool {
 }
 
 func isOptional(field reflect.StructField) bool {
+	validateCurrent := getValidateCurrent(field.Tag.Get("validate"))
+
 	// Non-pointer struct types and direct or indirect interface types should never be optional().
 	// Struct fields that are themselves structs ignore the "omitempty" tag because
 	// structs do not have an empty value.
@@ -970,6 +967,11 @@ func isOptional(field reflect.StructField) bool {
 		strings.Contains(getValidateCurrent(field.Tag.Get("validate")), "required") {
 		return false
 	}
+
+	if strings.Contains(validateCurrent, "=") && !strings.Contains(validateCurrent, "omitempty") {
+		return false
+	}
+
 	// Otherwise, omitempty zero-values are omitted and are mapped to undefined in JS/TS.
 	return strings.Contains(field.Tag.Get("json"), "omitempty")
 }

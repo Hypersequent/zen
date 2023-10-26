@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  test:
+    name: Test
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    env:
+      CI: true
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '^1.21.3'
+      - run: go version
+
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@latest
+
+      - name: Add gofumpt to PATH
+        run: echo "$GOPATH/bin" >> $GITHUB_PATH
+
+      - name: Run gofumpt
+        run: diff <(echo -n) <(gofumpt -d .)
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
+
+      - name: Test
+        run: make test
