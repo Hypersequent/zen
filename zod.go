@@ -938,7 +938,6 @@ func getValidateCurrent(validate string) string {
 	var validateCurrent string
 
 	if strings.HasPrefix(validate, "dive") {
-
 	} else if strings.Contains(validate, ",dive") {
 		validateCurrent = strings.Split(validate, ",dive")[0]
 	} else {
