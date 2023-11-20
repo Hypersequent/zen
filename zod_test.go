@@ -114,6 +114,38 @@ export type BotUser = z.infer<typeof BotUserSchema>
 		StructToZodSchemaWithPrefix("Bot", User{}))
 }
 
+func TestNestedStruct(t *testing.T) {
+	type HasID struct {
+		ID string
+	}
+	type HasName struct {
+		Name string `json:"name"`
+	}
+	type User struct {
+		HasID
+		HasName
+		Tags []string
+	}
+	assert.Equal(t,
+		`export const HasIDSchema = z.object({
+  ID: z.string(),
+})
+export type HasID = z.infer<typeof HasIDSchema>
+
+export const HasNameSchema = z.object({
+  name: z.string(),
+})
+export type HasName = z.infer<typeof HasNameSchema>
+
+export const UserSchema = z.object({
+  Tags: z.string().array().nullable(),
+}).merge(HasIDSchema).merge(HasNameSchema)
+export type User = z.infer<typeof UserSchema>
+
+`,
+		StructToZodSchema(User{}))
+}
+
 func TestStringArray(t *testing.T) {
 	type User struct {
 		Tags []string
@@ -121,6 +153,21 @@ func TestStringArray(t *testing.T) {
 	assert.Equal(t,
 		`export const UserSchema = z.object({
   Tags: z.string().array().nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+
+`,
+		StructToZodSchema(User{}))
+}
+
+func TestStringNestedArray(t *testing.T) {
+	type TagPair [2]string
+	type User struct {
+		TagPairs []TagPair
+	}
+	assert.Equal(t,
+		`export const UserSchema = z.object({
+  TagPairs: z.string().array().length(2).array().nullable(),
 })
 export type User = z.infer<typeof UserSchema>
 

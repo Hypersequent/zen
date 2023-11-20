@@ -217,19 +217,30 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 	output.WriteString(`z.object({
 `)
 
+	merges := []string{}
+
 	fields := input.NumField()
 	for i := 0; i < fields; i++ {
 		field := input.Field(i)
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line := c.convertField(field, indent+1, optional, nullable)
+		line, shouldMerge := c.convertField(field, indent+1, optional, nullable, field.Anonymous)
 
-		output.WriteString(line)
+		if !shouldMerge {
+			output.WriteString(line)
+		} else {
+			merges = append(merges, line)
+		}
 	}
 
 	output.WriteString(indentation(indent))
 	output.WriteString(`})`)
+	if len(merges) > 0 {
+		for _, merge := range merges {
+			output.WriteString(merge)
+		}
+	}
 
 	return output.String()
 }
@@ -395,12 +406,12 @@ func (c *Converter) getType(t reflect.Type, name string, indent int) string {
 	return zodType
 }
 
-func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) string {
+func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable, anonymous bool) (string, bool) {
 	name := fieldName(f)
 
 	// fields named `-` are not exported to JSON so don't export zod types
 	if name == "-" {
-		return ""
+		return "", false
 	}
 
 	// because nullability is processed before custom types, this makes sure
@@ -417,13 +428,18 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		nullableCall = ".nullable()"
 	}
 
-	return fmt.Sprintf(
-		"%s%s: %s%s%s,\n",
-		indentation(indent),
-		name,
-		c.ConvertType(f.Type, typeName(f.Type), f.Tag.Get("validate"), indent),
-		optionalCall,
-		nullableCall)
+	t := c.ConvertType(f.Type, typeName(f.Type), f.Tag.Get("validate"), indent)
+	if !anonymous {
+		return fmt.Sprintf(
+			"%s%s: %s%s%s,\n",
+			indentation(indent),
+			name,
+			t,
+			optionalCall,
+			nullableCall), false
+	} else {
+		return fmt.Sprintf(".merge(%s)", t), true
+	}
 }
 
 func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) string {
