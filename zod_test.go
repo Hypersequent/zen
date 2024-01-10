@@ -1484,6 +1484,50 @@ export type Dive3 = z.infer<typeof Dive3Schema>
 `, StructToZodSchema(Dive3{}))
 }
 
+func TestMapWithNonStringKey(t *testing.T) {
+	type Map1 struct {
+		Name     string
+		Metadata map[int]string
+	}
+
+	assert.Equal(t,
+		`export const Map1Schema = z.object({
+  Name: z.string(),
+  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
+})
+export type Map1 = z.infer<typeof Map1Schema>
+
+`, StructToZodSchema(Map1{}))
+
+	type Map2 struct {
+		Name     string
+		Metadata map[time.Time]string
+	}
+
+	assert.Equal(t,
+		`export const Map2Schema = z.object({
+  Name: z.string(),
+  Metadata: z.record(z.coerce.date(), z.string()).nullable(),
+})
+export type Map2 = z.infer<typeof Map2Schema>
+
+`, StructToZodSchema(Map2{}))
+
+	type Map3 struct {
+		Name     string
+		Metadata map[float64]string
+	}
+
+	assert.Equal(t,
+		`export const Map3Schema = z.object({
+  Name: z.string(),
+  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
+})
+export type Map3 = z.infer<typeof Map3Schema>
+
+`, StructToZodSchema(Map3{}))
+}
+
 func TestGetValidateKeys(t *testing.T) {
 	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,max=4"))
 	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,max=4"))
