@@ -549,6 +549,39 @@ func (c *Converter) getTypeSliceAndArray(t reflect.Type, name string, indent int
 		c.getType(t.Elem(), name, indent))
 }
 
+func (c *Converter) convertKeyType(t reflect.Type, name, validate string, indent int) string {
+	if t.Name() == "Time" {
+		return "z.coerce.date()"
+	}
+
+	// boolean, number, string, any
+	zodType, ok := typeMapping[t.Kind()]
+	if !ok || (zodType != "string" && zodType != "number") {
+		panic(fmt.Sprint("cannot handle key type: ", t.Kind()))
+	}
+
+	var validateStr string
+	if validate != "" {
+		switch zodType {
+		case "string":
+			validateStr = c.validateString(validate)
+			if strings.Contains(validateStr, ".enum(") {
+				return "z" + validateStr
+			}
+		case "number":
+			validateStr = c.validateNumber(validate)
+		}
+	}
+
+	if zodType == "string" {
+		return fmt.Sprintf("z.%s()%s", zodType, validateStr)
+	}
+
+	// https://pkg.go.dev/encoding/json#Marshal
+	// Map values encode as JSON objects. The map's key type must either be a string, an integer type, or implement encoding.TextMarshaler.
+	return fmt.Sprintf("z.coerce.%s()%s", zodType, validateStr)
+}
+
 func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int) string {
 	var validateStr strings.Builder
 	if validate != "" {
@@ -586,7 +619,7 @@ func (c *Converter) convertMap(t reflect.Type, name, validate string, indent int
 	}
 
 	return fmt.Sprintf(`z.record(%s, %s)%s`,
-		c.ConvertType(t.Key(), name, getValidateKeys(validate), indent),
+		c.convertKeyType(t.Key(), name, getValidateKeys(validate), indent),
 		c.ConvertType(t.Elem(), name, getValidateValues(validate), indent),
 		validateStr.String())
 }
