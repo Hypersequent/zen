@@ -309,6 +309,27 @@ export type User = z.infer<typeof UserSchema>
 		StructToZodSchema(User{}))
 }
 
+func TestIgnoredValidation(t *testing.T) {
+	type Custom struct {
+		Name string `validate="uri,custom"`
+		Number int `validate="custom"`
+	}
+	c := NewConverter(make(map[string]CustomFn))
+	c.SetIgnores([]string{"custom", "uri"})
+
+	c.AddType(Custom{})
+
+	assert.Equal(t,
+		`export const CustomSchema = z.object({
+  Name: z.string(),
+  Number: z.number(),
+})
+export type Custom = z.infer<typeof CustomSchema>
+
+`,
+		c.Export())
+}
+
 func TestNullableWithValidations(t *testing.T) {
 	type User struct {
 		Name string `validate:"required"`
