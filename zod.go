@@ -727,7 +727,6 @@ func (c *Converter) validateNumber(validate string) string {
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if c.checkIsIgnored(part) {
-			validateStr.WriteString("")
 			continue
 		}
 
@@ -795,7 +794,6 @@ func (c *Converter) validateString(validate string) string {
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if c.checkIsIgnored(part) {
-			validateStr.WriteString("")
 			continue
 		}
 		// We handle the parts which have = separately
