@@ -311,8 +311,8 @@ export type User = z.infer<typeof UserSchema>
 
 func TestIgnoredValidation(t *testing.T) {
 	type Custom struct {
-		Name string `validate="uri,custom"`
-		Number int `validate="custom"`
+		Name string `validate:"uri,custom"`
+		Number int `validate:"custom"`
 	}
 	c := NewConverter(make(map[string]CustomFn))
 	c.SetIgnores([]string{"custom", "uri"})
