@@ -1976,7 +1976,7 @@ export type User = z.infer<typeof UserSchema>
 
 func TestCustom(t *testing.T) {
 	c := NewConverter(map[string]CustomFn{
-		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, s, g, validate string, i int) string {
+		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
 			return "z.string()"
 		},
 	})
@@ -2070,4 +2070,40 @@ func TestCyclic(t *testing.T) {
 	assert.Panics(t, func() {
 		StructToZodSchema(TestCyclicA{})
 	})
+}
+
+type GenericPair[T any, U any] struct {
+	First  T
+	Second U
+}
+
+type StringIntPair GenericPair[string, int]
+
+type PairMap[K comparable, T any, U any] struct {
+	Items map[K]GenericPair[T, U] `json:"items"`
+}
+
+func TestGenerics(t *testing.T) {
+	c := NewConverter(nil)
+	c.AddType(StringIntPair{})
+	c.AddType(GenericPair[int, bool]{})
+	c.AddType(PairMap[string, int, bool]{})
+	assert.Equal(t, `export const StringIntPairSchema = z.object({
+  First: z.string(),
+  Second: z.number(),
+})
+export type StringIntPair = z.infer<typeof StringIntPairSchema>
+
+export const GenericPairIntBoolSchema = z.object({
+  First: z.number(),
+  Second: z.boolean(),
+})
+export type GenericPairIntBool = z.infer<typeof GenericPairIntBoolSchema>
+
+export const PairMapStringIntBoolSchema = z.object({
+  items: z.record(z.string(), GenericPairIntBoolSchema).nullable(),
+})
+export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
+
+`, c.Export())
 }
