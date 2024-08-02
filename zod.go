@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// Initializes and returns a new converter instance. The custom handler function
-// map should be keyed on the fully qualified type name (excluding generic type
-// arguments), ie. package.typename.
+// NewConverter initializes and returns a new converter instance. The custom handler
+// function map should be keyed on the fully qualified type name (excluding generic
+// type arguments), ie. package.typename.
 func NewConverter(custom map[string]CustomFn) Converter {
 	c := Converter{
 		prefix:  "",
@@ -22,7 +22,8 @@ func NewConverter(custom map[string]CustomFn) Converter {
 	return c
 }
 
-// Argument must be of struct type.
+// AddType converts a struct type to corresponding zod schema. AddType can be called
+// multiple times, followed by Export to get the corresonding zod schemas.
 func (c *Converter) AddType(input interface{}) {
 	t := reflect.TypeOf(input)
 
@@ -41,14 +42,20 @@ func (c *Converter) AddType(input interface{}) {
 	c.structs = order + 1
 }
 
-// Argument must be of struct type.
+// Convert returns zod schema corresponding to a struct type. Its a shorthand for
+// call to AddType followed by Export. So calling Convert after other calls to
+// AddType/Convert/ConvertSlice, returns schemas from those previous calls as well.
+// Calling AddType followed by Export might be more appropriate in such scenarios.
 func (c *Converter) Convert(input interface{}) string {
 	c.AddType(input)
 
 	return c.Export()
 }
 
-// Argument must be a slice of struct types.
+// ConvertSlice returns zod schemas corresponding to multiple struct types passed
+// in the argument. Similar to Convert, calling ConvertSlice after other calls to
+// AddType/Convert/ConvertSlice, returns schemas from those previous calls as well.
+// Calling AddType followed by Export might be more appropriate in such scenarios.
 func (c *Converter) ConvertSlice(inputs []interface{}) string {
 	for _, input := range inputs {
 		c.AddType(input)
@@ -57,7 +64,7 @@ func (c *Converter) ConvertSlice(inputs []interface{}) string {
 	return c.Export()
 }
 
-// Argument must be of struct type.
+// StructToZodSchema returns zod schema corresponding to a struct type.
 func StructToZodSchema(input interface{}) string {
 	c := Converter{
 		prefix:  "",
@@ -67,8 +74,8 @@ func StructToZodSchema(input interface{}) string {
 	return c.Convert(input)
 }
 
-// Argument must be of struct type. The prefix is added to the generated schema
-// and type names.
+// StructToZodSchemaWithPrefix returns zod schema corresponding to a struct type.
+// The prefix is added to the generated schema and type names.
 func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
 	c := Converter{
 		prefix:  prefix,
@@ -135,6 +142,8 @@ func (c *Converter) addSchema(name string, data string) {
 	}
 }
 
+// Export returns the zod schemas corresponding to all types that have been
+// converted so far.
 func (c *Converter) Export() string {
 	output := strings.Builder{}
 	var sorted []entry
@@ -149,9 +158,6 @@ func (c *Converter) Export() string {
 		output.WriteString("\n\n")
 	}
 
-	// Clear state
-	c.structs = 0
-	c.outputs = make(map[string]entry)
 	return output.String()
 }
 
@@ -314,7 +320,7 @@ func (c *Converter) handleCustomType(t reflect.Type, validate string, indent int
 	return "", false
 }
 
-// Should be called from custom converter functions.
+// ConvertType should be called from custom converter functions.
 func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) string {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()

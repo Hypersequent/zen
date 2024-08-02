@@ -4,7 +4,8 @@ Zod + Generate = Zen
 
 Converts Go structs with go-validator validations to Zod schemas.
 
-Zen supports self-referential types and generic types. Other cyclic types (apart from self referential types) are not supported.
+Zen supports self-referential types and generic types. Other cyclic types (apart from self referential types) are not supported
+as they are not supported by zod itself.
 
 ## Usage
 
