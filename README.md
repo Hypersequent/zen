@@ -4,33 +4,65 @@ Zod + Generate = Zen
 
 Converts Go structs with go-validator validations to Zod schemas.
 
-Zen supports self-referential types.
+Zen supports self-referential types and generic types. Other cyclic types (apart from self referential types) are not supported
+as they are not supported by zod itself.
 
-## Usage:
+## Usage
 
 ```go
 type Post struct {
 	Title string `validate:"required"`
 }
 type User struct {
-	Name       string `validate:"required"`
-	Nickname   *string // pointers become optional
-	Age        int 	 `validate:"min=18"`
-	Height     float64 `validate:"min=0,max=3"`
-	Tags       []string `validate:"min=1"`
+	Name       string     `validate:"required"`
+	Nickname   *string    // pointers become optional
+	Age        int        `validate:"min=18"`
+	Height     float64    `validate:"min=0,max=3"`
+	Tags       []string   `validate:"min=1"`
 	Favourites []struct { // nested structs are kept inline
 		Name string `validate:"required"`
 	}
 	Posts []Post // external structs are emitted as separate exports
 }
-StructToZodSchema(User{})
+fmt.Print(zen.StructToZodSchema(User{}))
+
+// Self referential types are supported
+type Tree struct {
+	Value    int
+	Children []Tree
+}
+fmt.Print(zen.StructToZodSchema(Tree{}))
+
+// We can also use create a converter and convert multiple types together
+c := zen.NewConverter(nil)
+
+// Generic types are also supported
+type GenericPair[T any, U any] struct {
+	First  T
+	Second U
+}
+type StringIntPair GenericPair[string, int]
+c.AddType(StringIntPair{})
+
+// For non-defined types, the type arguments are appended to the generic type
+// name to get the type name
+c.AddType(GenericPair[int, bool]{})
+
+// Even nested generic types are supported
+type PairMap[K comparable, T any, U any] struct {
+	Items map[K]GenericPair[T, U] `json:"items"`
+}
+c.AddType(PairMap[string, int, bool]{})
+
+// Now export the generated schemas. Duplicate schemas are skipped
+fmt.Print(c.Export())
 ```
 
 Outputs:
 
 ```typescript
 export const PostSchema = z.object({
-	Title: z.string().min(1),
+  Title: z.string().min(1),
 })
 export type Post = z.infer<typeof PostSchema>
 
@@ -46,9 +78,33 @@ export const UserSchema = z.object({
 	Posts: PostSchema.array().nullable(),
 })
 export type User = z.infer<typeof UserSchema>
-```
 
-It also works without any validations.
+export type Tree = {
+	Value: number,
+	Children: Tree[] | null,
+}
+export const TreeSchema: z.ZodType<Tree> = z.object({
+	Value: z.number(),
+	Children: z.lazy(() => TreeSchema).array().nullable(),
+})
+
+export const StringIntPairSchema = z.object({
+	First: z.string(),
+	Second: z.number(),
+})
+export type StringIntPair = z.infer<typeof StringIntPairSchema>
+
+export const GenericPairIntBoolSchema = z.object({
+	First: z.number(),
+	Second: z.boolean(),
+})
+export type GenericPairIntBool = z.infer<typeof GenericPairIntBoolSchema>
+
+export const PairMapStringIntBoolSchema = z.object({
+	items: z.record(z.string(), GenericPairIntBoolSchema).nullable(),
+})
+export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
+```
 
 ### How we use it at Hypersequent
 
@@ -61,7 +117,7 @@ It also works without any validations.
 	converter := zen.NewConverter(make(map[string]zen.CustomFn))
 
 	{{range .TypesToGenerate}}
-  converter.AddType(types.{{.}}{})
+	converter.AddType(types.{{.}}{})
 	{{end}}
 
 	schema := converter.Export()
@@ -69,11 +125,11 @@ It also works without any validations.
 
 ## Custom Types
 
-You can pass type name mappings to custom conversion functions:
+We can pass type name mappings to custom conversion functions:
 
 ```go
 c := zen.NewConverter(map[string]zen.CustomFn{
-	"github.com/shopspring/decimal.Decimal": func (c *zen.Converter, t reflect.Type, s, g string, i int) string {
+	"github.com/shopspring/decimal.Decimal": func (c *zen.Converter, t reflect.Type, v string, i int) string {
 		// Shopspring's decimal type serialises to a string.
 		return "z.string()"
 	},
@@ -98,11 +154,10 @@ There are some custom types with tests in the "custom" directory.
 The function signature for custom type handlers is:
 
 ```go
-func(c *zen.Converter, t reflect.Type, typeName, genericTypeName string, indentLevel int) string
+func(c *Converter, t reflect.Type, validate string, indent int) string
 ```
 
-You can use the Converter to process nested types. The `genericTypeName` is the name of the `T` in `Generic[T]` and the
-indent level is for passing to other converter APIs.
+We can use `c` to process nested types. Indent level is for passing to other converter APIs.
 
 ## Supported validations
 

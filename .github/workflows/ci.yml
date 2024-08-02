@@ -36,9 +36,10 @@ jobs:
         run: diff <(echo -n) <(gofumpt -d .)
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.52.2
+          version: v1.59
+          args: --verbose --timeout=3m
 
       - name: Test
         run: make test
