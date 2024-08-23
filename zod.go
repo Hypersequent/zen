@@ -129,7 +129,8 @@ type Converter struct {
 	structs int
 	outputs map[string]entry
 	custom  map[string]CustomFn
-	stack   []meta
+	stack   []Meta
+	ignores []string
 }
 
 func (c *Converter) addSchema(name string, data string) {
@@ -712,6 +713,19 @@ func getValidateValues(validate string) string {
 	return validateValues
 }
 
+func (c *Converter) SetIgnores(validations []string) {
+	c.ignores = validations
+}
+
+func (c *Converter) checkIsIgnored(part string) bool {
+	for _, ignore := range c.ignores {
+		if part == ignore {
+			return true
+		}
+	}
+	return false
+}
+
 // not implementing omitempty for numbers and strings
 // could support unusual cases like `validate:"omitempty,min=3,max=5"`
 func (c *Converter) validateNumber(validate string) string {
@@ -735,6 +749,9 @@ func (c *Converter) validateNumber(validate string) string {
 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
+		if c.checkIsIgnored(part) {
+			continue
+		}
 
 		if strings.ContainsRune(part, '=') {
 			idx := strings.Index(part, "=")
@@ -799,6 +816,9 @@ func (c *Converter) validateString(validate string) string {
 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
+		if c.checkIsIgnored(part) {
+			continue
+		}
 		// We handle the parts which have = separately
 		if strings.ContainsRune(part, '=') {
 			idx := strings.Index(part, "=")
