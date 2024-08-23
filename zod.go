@@ -129,7 +129,7 @@ type Converter struct {
 	structs int
 	outputs map[string]entry
 	custom  map[string]CustomFn
-	stack   []Meta
+	stack   []meta
 	ignores []string
 }
 
