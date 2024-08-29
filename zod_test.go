@@ -1466,7 +1466,7 @@ export type Dive1 = z.infer<typeof Dive1Schema>
 	}
 	assert.Equal(t,
 		`export const Dive2Schema = z.object({
-  Map: z.record(z.string(), z.string().min(3)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array().nonempty(),
+  Map: z.record(z.string(), z.string().min(3)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
 })
 export type Dive2 = z.infer<typeof Dive2Schema>
 
@@ -1477,7 +1477,7 @@ export type Dive2 = z.infer<typeof Dive2Schema>
 	}
 	assert.Equal(t,
 		`export const Dive3Schema = z.object({
-  Map: z.record(z.string().min(3), z.string().max(4)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array().nonempty(),
+  Map: z.record(z.string().min(3), z.string().max(4)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
 })
 export type Dive3 = z.infer<typeof Dive3Schema>
 
@@ -1708,13 +1708,13 @@ export const UserSchema = z.object({
   Age: z.number().gte(18).refine((val) => val !== 0),
   Height: z.number().gte(1.5).refine((val) => val !== 0),
   OldPostWithMetaData: PostWithMetaDataSchema,
-  Tags: z.string().array().nonempty().min(1),
+  Tags: z.string().array().min(1),
   TagsOptional: z.string().array().optional(),
   TagsOptionalNullable: z.string().array().optional().nullable(),
   Favourites: z.object({
     Name: z.string().min(1),
   }).array().nullable(),
-  Posts: PostSchema.array().nonempty(),
+  Posts: PostSchema.array(),
   Post: PostSchema,
   PostOptional: PostSchema.optional(),
   PostOptionalNullable: PostSchema.optional().nullable(),
@@ -1806,7 +1806,7 @@ func TestConvertSliceWithValidations(t *testing.T) {
 	}
 	assert.Equal(t,
 		`export const RequiredSchema = z.object({
-  Slice: z.string().array().nonempty(),
+  Slice: z.string().array(),
 })
 export type Required = z.infer<typeof RequiredSchema>
 
@@ -1913,7 +1913,7 @@ export type Ne = z.infer<typeof NeSchema>
 		Slice [][]string `validate:"dive,required"`
 	}
 	assert.Equal(t, `export const Dive1Schema = z.object({
-  Slice: z.string().array().nonempty().array().nullable(),
+  Slice: z.string().array().array().nullable(),
 })
 export type Dive1 = z.infer<typeof Dive1Schema>
 
@@ -1923,7 +1923,7 @@ export type Dive1 = z.infer<typeof Dive1Schema>
 		Slice [][]string `validate:"required,dive,min=1"`
 	}
 	assert.Equal(t, `export const Dive2Schema = z.object({
-  Slice: z.string().array().min(1).array().nonempty(),
+  Slice: z.string().array().min(1).array(),
 })
 export type Dive2 = z.infer<typeof Dive2Schema>
 
@@ -2106,4 +2106,29 @@ export const PairMapStringIntBoolSchema = z.object({
 export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
 
 `, c.Export())
+}
+
+func TestSliceFields(t *testing.T) {
+	type TestSliceFieldsStruct struct {
+		NoValidate       []int
+		Required         []int `validate:"required"`
+		Min              []int `validate:"min=1"`
+		OmitEmpty        []int `validate:"omitempty"`
+		JSONOmitEmpty    []int `json:",omitempty"`
+		MinOmitEmpty     []int `validate:"min=1,omitempty"`
+		JSONMinOmitEmpty []int `json:",omitempty" validate:"min=1,omitempty"`
+	}
+
+	assert.Equal(t, `export const TestSliceFieldsStructSchema = z.object({
+  NoValidate: z.number().array().nullable(),
+  Required: z.number().array(),
+  Min: z.number().array().min(1),
+  OmitEmpty: z.number().array().nullable(),
+  JSONOmitEmpty: z.number().array().optional(),
+  MinOmitEmpty: z.number().array().min(1).nullable(),
+  JSONMinOmitEmpty: z.number().array().min(1).optional(),
+})
+export type TestSliceFieldsStruct = z.infer<typeof TestSliceFieldsStructSchema>
+
+`, StructToZodSchema(TestSliceFieldsStruct{}))
 }

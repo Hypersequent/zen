@@ -528,7 +528,6 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 			} else if part == "dive" {
 				break
 			} else if part == "required" {
-				validateStr.WriteString(".nonempty()")
 			} else if strings.HasPrefix(part, "min=") {
 				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
 			} else if strings.HasPrefix(part, "max=") {
