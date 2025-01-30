@@ -10,9 +10,10 @@ import (
 )
 
 func TestCustom(t *testing.T) {
-	c := zen.NewConverter(map[string]zen.CustomFn{
+	opt := zen.WithCustomTypes(map[string]zen.CustomFn{
 		customoptional.OptionalType: customoptional.OptionalFunc,
 	})
+	c := zen.NewConverter(opt)
 
 	type Profile struct {
 		Bio     string

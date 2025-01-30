@@ -3,6 +3,7 @@ package zen
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,7 +112,7 @@ func TestStructSimplePrefix(t *testing.T) {
 export type BotUser = z.infer<typeof BotUserSchema>
 
 `,
-		StructToZodSchemaWithPrefix("Bot", User{}))
+		StructToZodSchema(User{}, WithPrefix("Bot")))
 }
 
 func TestNestedStruct(t *testing.T) {
@@ -1774,7 +1775,7 @@ func TestConvertSlice(t *testing.T) {
 	type Whim struct {
 		Wham *Foo
 	}
-	c := NewConverter(map[string]CustomFn{})
+	c := NewConverter()
 	types := []interface{}{
 		Zip{},
 		Whim{},
@@ -1975,11 +1976,11 @@ export type User = z.infer<typeof UserSchema>
 }
 
 func TestCustom(t *testing.T) {
-	c := NewConverter(map[string]CustomFn{
+	c := NewConverter(WithCustomTypes(map[string]CustomFn{
 		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
 			return "z.string()"
 		},
-	})
+	}))
 
 	type Decimal struct {
 		Value    int
@@ -2084,7 +2085,7 @@ type PairMap[K comparable, T any, U any] struct {
 }
 
 func TestGenerics(t *testing.T) {
-	c := NewConverter(nil)
+	c := NewConverter()
 	c.AddType(StringIntPair{})
 	c.AddType(GenericPair[int, bool]{})
 	c.AddType(PairMap[string, int, bool]{})
@@ -2131,4 +2132,53 @@ func TestSliceFields(t *testing.T) {
 export type TestSliceFieldsStruct = z.infer<typeof TestSliceFieldsStructSchema>
 
 `, StructToZodSchema(TestSliceFieldsStruct{}))
+}
+
+func TestCustomTag(t *testing.T) {
+	type SortParams struct {
+		Order *string `json:"order,omitempty" validate:"omitempty,oneof=asc desc"`
+		Field *string `json:"field,omitempty"`
+	}
+
+	type Request struct {
+		SortParams       `validate:"sortFields=title address age dob"`
+		PaginationParams struct {
+			Start *int `json:"start,omitempty" validate:"omitempty,gt=0"`
+			End   *int `json:"end,omitempty" validate:"omitempty,gt=0"`
+		} `validate:"pageParams"`
+		Search *string `json:"search,omitempty" validate:"identifier"`
+	}
+
+	customTagHandlers := map[string]CustomFn{
+		"identifier": func(c *Converter, t reflect.Type, validate string, i int) string {
+			return ".refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier')"
+		},
+		"pageParams": func(c *Converter, t reflect.Type, validate string, i int) string {
+			return ".refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end')"
+		},
+		"sortFields": func(c *Converter, t reflect.Type, validate string, i int) string {
+			sortFields := strings.Split(validate, " ")
+			for i := range sortFields {
+				sortFields[i] = fmt.Sprintf("'%s'", sortFields[i])
+			}
+			return fmt.Sprintf(".extend({field: z.enum([%s])})", strings.Join(sortFields, ", "))
+		},
+	}
+
+	assert.Equal(t, `export const SortParamsSchema = z.object({
+  order: z.enum(["asc", "desc"] as const).optional(),
+  field: z.string().optional(),
+})
+export type SortParams = z.infer<typeof SortParamsSchema>
+
+export const RequestSchema = z.object({
+  PaginationParams: z.object({
+    start: z.number().gt(0).optional(),
+    end: z.number().gt(0).optional(),
+  }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
+  search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
+}).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
+export type Request = z.infer<typeof RequestSchema>
+
+`, NewConverter(WithCustomTags(customTagHandlers)).Convert(Request{}))
 }
