@@ -13,7 +13,7 @@ func TestCustom(t *testing.T) {
 	opt := zen.WithCustomTypes(map[string]zen.CustomFn{
 		customoptional.OptionalType: customoptional.OptionalFunc,
 	})
-	c := zen.NewConverter(opt)
+	c := zen.NewConverterWithOpts(opt)
 
 	type Profile struct {
 		Bio     string

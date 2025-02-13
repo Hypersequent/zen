@@ -34,7 +34,7 @@ type Tree struct {
 fmt.Print(zen.StructToZodSchema(Tree{}))
 
 // We can also use create a converter and convert multiple types together
-c := zen.NewConverter()
+c := zen.NewConverterWithOpts()
 
 // Generic types are also supported
 type GenericPair[T any, U any] struct {
@@ -114,7 +114,7 @@ export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
 - Then using go templates and passing these struct names as input, we generate go code that is later used to generate the zod schemas.
 
 ```go.tmpl
-	converter := zen.NewConverter(make(map[string]zen.CustomFn))
+	converter := zen.NewConverterWithOpts(make(map[string]zen.CustomFn))
 
 	{{range .TypesToGenerate}}
 	converter.AddType(types.{{.}}{})
@@ -247,7 +247,7 @@ customTagHandlers := map[string]zen.CustomFn{
 	},
 }
 opt := zen.WithCustomTags(customTagHandlers)
-c := zen.NewConverter(opt)
+c := zen.NewConverterWithOpts(opt)
 
 c.Convert(Request{})
 ```
@@ -285,7 +285,7 @@ To ensure safety, `zen` will panic if it encounters unknown validation tags. If 
 
 ```go
 opt := zen.WithIgnoreTags("identifier")
-c := zen.NewConverter(opt)
+c := zen.NewConverterWithOpts(opt)
 ```
 
 ## Custom Types
@@ -300,7 +300,7 @@ customTypeHandlers := map[string]zen.CustomFn{
 	},
 }
 opt := zen.WithCustomTypes(customTypeHandlers)
-c := zen.NewConverter(opt)
+c := zen.NewConverterWithOpts(opt)
 
 c.Convert(User{
 	Money decimal.Decimal

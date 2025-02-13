@@ -49,8 +49,8 @@ func WithIgnoreTags(ignores ...string) Opt {
 	}
 }
 
-// NewConverter initializes and returns a new converter instance.
-func NewConverter(opts ...Opt) *Converter {
+// NewConverterWithOpts initializes and returns a new converter instance.
+func NewConverterWithOpts(opts ...Opt) *Converter {
 	c := &Converter{
 		prefix:      "",
 		customTypes: make(map[string]CustomFn),
@@ -61,6 +61,19 @@ func NewConverter(opts ...Opt) *Converter {
 
 	for _, opt := range opts {
 		opt(c)
+	}
+
+	return c
+}
+
+// NewConverter initializes and returns a new converter instance. The custom handler
+// function map should be keyed on the fully qualified type name (excluding generic
+// type arguments), ie. package.typename.
+func NewConverter(customTypes map[string]CustomFn) Converter {
+	c := Converter{
+		prefix:      "",
+		outputs:     make(map[string]entry),
+		customTypes: customTypes,
 	}
 
 	return c
@@ -110,7 +123,7 @@ func (c *Converter) ConvertSlice(inputs []interface{}) string {
 
 // StructToZodSchema returns zod schema corresponding to a struct type.
 func StructToZodSchema(input interface{}, opts ...Opt) string {
-	return NewConverter(opts...).Convert(input)
+	return NewConverterWithOpts(opts...).Convert(input)
 }
 
 var typeMapping = map[reflect.Kind]string{
@@ -398,36 +411,8 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 		}
 
 		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-
-			idx := strings.Index(part, "=")
-			if idx == 0 || idx == len(part)-1 {
-				panic(fmt.Sprintf("invalid validation: %s", part))
-			}
-
-			var valName string
-			var valValue string
-			if idx == -1 {
-				valName = part
-			} else {
-				valName = part[:idx]
-				valValue = part[idx+1:]
-			}
-
-			if c.checkIsIgnored(valName) {
-				continue
-			}
-
-			if h, ok := c.customTags[valName]; ok {
-				v := h(c, reflect.TypeOf(0), valValue, 0)
-				if strings.HasPrefix(v, ".refine") {
-					refines = append(refines, v)
-				} else {
-					validateStr.WriteString(v)
-				}
+			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+			if done {
 				continue
 			}
 
@@ -584,44 +569,17 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 	parts := strings.Split(validateCurrent, ",")
 	isArray := t.Kind() == reflect.Array
 
+forParts:
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		idx := strings.Index(part, "=")
-		if idx == 0 || idx == len(part)-1 {
-			panic(fmt.Sprintf("invalid validation: %s", part))
-		}
-
-		var valName string
-		var valValue string
-		if idx == -1 {
-			valName = part
-		} else {
-			valName = part[:idx]
-			valValue = part[idx+1:]
-		}
-
-		if c.checkIsIgnored(valName) {
-			continue
-		}
-
-		if h, ok := c.customTags[valName]; ok {
-			v := h(c, reflect.TypeOf(0), valValue, 0)
-			if strings.HasPrefix(v, ".refine") {
-				refines = append(refines, v)
-			} else {
-				validateStr.WriteString(v)
-			}
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
 
 		if isArray {
 			panic(fmt.Sprintf("unknown validation: %s", part))
 		} else {
-			if idx != -1 {
+			if valValue != "" {
 				switch valName {
 				case "required":
 				case "min":
@@ -659,7 +617,7 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 				case "omitempty":
 				case "required":
 				case "dive":
-					goto forEnd
+					break forParts
 
 				default:
 					panic(fmt.Sprintf("unknown validation: %s", part))
@@ -668,7 +626,6 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 		}
 	}
 
-forEnd:
 	if isArray {
 		validateStr.WriteString(fmt.Sprintf(".length(%d)", t.Len()))
 	}
@@ -726,41 +683,14 @@ func (c *Converter) convertMap(t reflect.Type, validate string, indent int) stri
 	var refines []string
 	parts := strings.Split(validate, ",")
 
+forParts:
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
 
-		idx := strings.Index(part, "=")
-		if idx == 0 || idx == len(part)-1 {
-			panic(fmt.Sprintf("invalid validation: %s", part))
-		}
-
-		var valName string
-		var valValue string
-		if idx == -1 {
-			valName = part
-		} else {
-			valName = part[:idx]
-			valValue = part[idx+1:]
-		}
-
-		if c.checkIsIgnored(valName) {
-			continue
-		}
-
-		if h, ok := c.customTags[valName]; ok {
-			v := h(c, reflect.TypeOf(0), valValue, 0)
-			if strings.HasPrefix(v, ".refine") {
-				refines = append(refines, v)
-			} else {
-				validateStr.WriteString(v)
-			}
-			continue
-		}
-
-		if idx != -1 {
+		if valValue != "" {
 			switch valName {
 			case "min":
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
@@ -790,7 +720,7 @@ func (c *Converter) convertMap(t reflect.Type, validate string, indent int) stri
 			case "required":
 				refines = append(refines, ".refine((val) => Object.keys(val).length > 0, 'Empty map')")
 			case "dive":
-				goto forEnd
+				break forParts
 
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
@@ -798,7 +728,6 @@ func (c *Converter) convertMap(t reflect.Type, validate string, indent int) stri
 		}
 	}
 
-forEnd:
 	for _, refine := range refines {
 		validateStr.WriteString(refine)
 	}
@@ -891,40 +820,12 @@ func (c *Converter) validateNumber(validate string) string {
 	parts := strings.Split(validate, ",")
 
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
 
-		idx := strings.Index(part, "=")
-		if idx == 0 || idx == len(part)-1 {
-			panic(fmt.Sprintf("invalid validation: %s", part))
-		}
-
-		var valName string
-		var valValue string
-		if idx == -1 {
-			valName = part
-		} else {
-			valName = part[:idx]
-			valValue = part[idx+1:]
-		}
-
-		if c.checkIsIgnored(valName) {
-			continue
-		}
-
-		if h, ok := c.customTags[valName]; ok {
-			v := h(c, reflect.TypeOf(0), valValue, 0)
-			if strings.HasPrefix(v, ".refine") {
-				refines = append(refines, v)
-			} else {
-				validateStr.WriteString(v)
-			}
-			continue
-		}
-
-		if idx != -1 {
+		if valValue != "" {
 			switch valName {
 			case "gt":
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
@@ -973,40 +874,12 @@ func (c *Converter) validateString(validate string) string {
 	parts := strings.Split(validate, ",")
 
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
 
-		idx := strings.Index(part, "=")
-		if idx == 0 || idx == len(part)-1 {
-			panic(fmt.Sprintf("invalid validation: %s", part))
-		}
-
-		var valName string
-		var valValue string
-		if idx == -1 {
-			valName = part
-		} else {
-			valName = part[:idx]
-			valValue = part[idx+1:]
-		}
-
-		if c.checkIsIgnored(valName) {
-			continue
-		}
-
-		if h, ok := c.customTags[valName]; ok {
-			v := h(c, reflect.TypeOf(""), validate, 0)
-			if strings.HasPrefix(v, ".refine") {
-				refines = append(refines, v)
-			} else {
-				validateStr.WriteString(v)
-			}
-			continue
-		}
-
-		if idx != -1 {
+		if valValue != "" {
 			switch valName {
 			case "oneof":
 				vals := splitParamsRegex.FindAllString(part[6:], -1)
@@ -1169,6 +1042,43 @@ func (c *Converter) validateString(validate string) string {
 	}
 
 	return validateStr.String()
+}
+
+func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return "", "", true
+	}
+
+	idx := strings.Index(part, "=")
+	if idx == 0 || idx == len(part)-1 {
+		panic(fmt.Sprintf("invalid validation: %s", part))
+	}
+
+	var valName string
+	var valValue string
+	if idx == -1 {
+		valName = part
+	} else {
+		valName = part[:idx]
+		valValue = part[idx+1:]
+	}
+
+	if c.checkIsIgnored(valName) {
+		return "", "", true
+	}
+
+	if h, ok := c.customTags[valName]; ok {
+		v := h(c, reflect.TypeOf(0), valValue, 0)
+		if strings.HasPrefix(v, ".refine") {
+			*refines = append(*refines, v)
+		} else {
+			(*validateStr).WriteString(v)
+		}
+		return "", "", true
+	}
+
+	return valName, valValue, false
 }
 
 func isNullable(field reflect.StructField) bool {

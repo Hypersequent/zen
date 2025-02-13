@@ -1775,7 +1775,7 @@ func TestConvertSlice(t *testing.T) {
 	type Whim struct {
 		Wham *Foo
 	}
-	c := NewConverter()
+	c := NewConverterWithOpts()
 	types := []interface{}{
 		Zip{},
 		Whim{},
@@ -1976,7 +1976,7 @@ export type User = z.infer<typeof UserSchema>
 }
 
 func TestCustom(t *testing.T) {
-	c := NewConverter(WithCustomTypes(map[string]CustomFn{
+	c := NewConverterWithOpts(WithCustomTypes(map[string]CustomFn{
 		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
 			return "z.string()"
 		},
@@ -2085,7 +2085,7 @@ type PairMap[K comparable, T any, U any] struct {
 }
 
 func TestGenerics(t *testing.T) {
-	c := NewConverter()
+	c := NewConverterWithOpts()
 	c.AddType(StringIntPair{})
 	c.AddType(GenericPair[int, bool]{})
 	c.AddType(PairMap[string, int, bool]{})
@@ -2180,5 +2180,5 @@ export const RequestSchema = z.object({
 }).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
 export type Request = z.infer<typeof RequestSchema>
 
-`, NewConverter(WithCustomTags(customTagHandlers)).Convert(Request{}))
+`, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{}))
 }
