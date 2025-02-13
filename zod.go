@@ -1095,11 +1095,13 @@ func isNullable(field reflect.StructField) bool {
 		return false
 	}
 
+	jsonTag := field.Tag.Get("json")
+
 	// pointers can be nil, which are mapped to null in JS/TS.
 	if field.Type.Kind() == reflect.Ptr {
-		// However, if a pointer field is tagged with "omitempty", it usually cannot be exported as "null"
-		// since nil is a pointer's empty value.
-		if strings.Contains(field.Tag.Get("json"), "omitempty") {
+		// However, if a pointer field is tagged with "omitempty"/"omitzero", it usually cannot be exported
+		// as "null" since nil is a pointer's empty/zero value.
+		if strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero") {
 			// Unless it is a pointer to a slice, a map, a pointer, or an interface
 			// because values with those types can themselves be nil and will be exported as "null".
 			k := field.Type.Elem().Kind()
@@ -1112,7 +1114,7 @@ func isNullable(field reflect.StructField) bool {
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
 		// unless there are also optional in which case they are no longer nullable
-		return !strings.Contains(field.Tag.Get("json"), "omitempty")
+		return !strings.Contains(jsonTag, "omitempty") && !strings.Contains(jsonTag, "omitzero")
 	}
 
 	return false
@@ -1158,8 +1160,9 @@ func isOptional(field reflect.StructField) bool {
 		return false
 	}
 
-	// Otherwise, omitempty zero-values are omitted and are mapped to undefined in JS/TS.
-	return strings.Contains(field.Tag.Get("json"), "omitempty")
+	// Otherwise, omitempty/omitzero zero-values are omitted and are mapped to undefined in JS/TS.
+	jsonTag := field.Tag.Get("json")
+	return strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero")
 }
 
 func indentation(level int) string {
