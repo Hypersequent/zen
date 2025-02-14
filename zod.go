@@ -66,17 +66,12 @@ func NewConverterWithOpts(opts ...Opt) *Converter {
 	return c
 }
 
-// NewConverter initializes and returns a new converter instance. The custom handler
-// function map should be keyed on the fully qualified type name (excluding generic
-// type arguments), ie. package.typename.
+// Deprecated: NewConverter is deprecated. Use NewConverterWithOpts(WithCustomTypes(customTypes)) instead.
+// Example:
+//
+//	converter := NewConverterWithOpts(WithCustomTypes(customTypes))
 func NewConverter(customTypes map[string]CustomFn) Converter {
-	c := Converter{
-		prefix:      "",
-		outputs:     make(map[string]entry),
-		customTypes: customTypes,
-	}
-
-	return c
+	return *NewConverterWithOpts(WithCustomTypes(customTypes))
 }
 
 // AddType converts a struct type to corresponding zod schema. AddType can be called
