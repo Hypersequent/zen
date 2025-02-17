@@ -1976,11 +1976,11 @@ export type User = z.infer<typeof UserSchema>
 }
 
 func TestCustom(t *testing.T) {
-	c := NewConverterWithOpts(WithCustomTypes(map[string]CustomFn{
+	c := NewConverter(map[string]CustomFn{
 		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
 			return "z.string()"
 		},
-	}))
+	})
 
 	type Decimal struct {
 		Value    int
