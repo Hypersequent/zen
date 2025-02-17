@@ -21,9 +21,9 @@ jobs:
         with:
           fetch-depth: 2
 
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '^1.21.3'
+          go-version: '^1.23.5'
       - run: go version
 
       - name: Install gofumpt
@@ -38,7 +38,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.59
+          version: v1.63
           args: --verbose --timeout=3m
 
       - name: Test

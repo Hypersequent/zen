@@ -2,7 +2,7 @@
 
 Zod + Generate = Zen
 
-Converts Go structs with go-validator validations to Zod schemas.
+Converts Go structs with [go-validator](https://github.com/go-playground/validator) validations to Zod schemas.
 
 Zen supports self-referential types and generic types. Other cyclic types (apart from self referential types) are not supported
 as they are not supported by zod itself.
@@ -34,7 +34,7 @@ type Tree struct {
 fmt.Print(zen.StructToZodSchema(Tree{}))
 
 // We can also use create a converter and convert multiple types together
-c := zen.NewConverter(nil)
+c := zen.NewConverterWithOpts()
 
 // Generic types are also supported
 type GenericPair[T any, U any] struct {
@@ -114,7 +114,7 @@ export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
 - Then using go templates and passing these struct names as input, we generate go code that is later used to generate the zod schemas.
 
 ```go.tmpl
-	converter := zen.NewConverter(make(map[string]zen.CustomFn))
+	converter := zen.NewConverterWithOpts(make(map[string]zen.CustomFn))
 
 	{{range .TypesToGenerate}}
 	converter.AddType(types.{{.}}{})
@@ -122,42 +122,6 @@ export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
 
 	schema := converter.Export()
 ```
-
-## Custom Types
-
-We can pass type name mappings to custom conversion functions:
-
-```go
-c := zen.NewConverter(map[string]zen.CustomFn{
-	"github.com/shopspring/decimal.Decimal": func (c *zen.Converter, t reflect.Type, v string, i int) string {
-		// Shopspring's decimal type serialises to a string.
-		return "z.string()"
-	},
-})
-
-c.Convert(User{
-	Money decimal.Decimal
-})
-```
-
-Outputs:
-
-```typescript
-export const UserSchema = z.object({
-	Money: z.string(),
-})
-export type User = z.infer<typeof UserSchema>
-```
-
-There are some custom types with tests in the "custom" directory.
-
-The function signature for custom type handlers is:
-
-```go
-func(c *Converter, t reflect.Type, validate string, indent int) string
-```
-
-We can use `c` to process nested types. Indent level is for passing to other converter APIs.
 
 ## Supported validations
 
@@ -247,6 +211,120 @@ We can use `c` to process nested types. Indent level is for passing to other con
 | required | Required    |
 
 - required checks that the value is not default, but we are not implementing this check for numbers and booleans
+
+## Custom Tags
+
+In addition to the [go-validator](https://github.com/go-playground/validator) tags supported out of the box, custom tags can also be implemented.
+
+```go
+type SortParams struct {
+	Order *string `json:"order,omitempty" validate:"omitempty,oneof=asc desc"`
+	Field *string `json:"field,omitempty"`
+}
+
+type Request struct {
+	SortParams       `validate:"sortFields=title address age dob"`
+	PaginationParams struct {
+		Start *int `json:"start,omitempty" validate:"omitempty,gt=0"`
+		End   *int `json:"end,omitempty" validate:"omitempty,gt=0"`
+	} `validate:"pageParams"`
+	Search *string `json:"search,omitempty" validate:"identifier"`
+}
+
+customTagHandlers := map[string]zen.CustomFn{
+	"identifier": func(c *zen.Converter, t reflect.Type, validate string, indent int) string {
+		return ".refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier')"
+	},
+	"pageParams": func(c *zen.Converter, t reflect.Type, validate string, indent int) string {
+		return ".refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end')"
+	},
+	"sortFields": func(c *zen.Converter, t reflect.Type, validate string, indent int) string {
+		sortFields := strings.Split(validate, " ")
+		for i := range sortFields {
+			sortFields[i] = fmt.Sprintf("'%s'", sortFields[i])
+		}
+		return fmt.Sprintf(".extend({field: z.enum([%s])})", strings.Join(sortFields, ", "))
+	},
+}
+opt := zen.WithCustomTags(customTagHandlers)
+c := zen.NewConverterWithOpts(opt)
+
+c.Convert(Request{})
+```
+
+Outputs:
+
+```ts
+export const SortParamsSchema = z.object({
+  order: z.enum(["asc", "desc"] as const).optional(),
+  field: z.string().optional(),
+})
+export type SortParams = z.infer<typeof SortParamsSchema>
+
+export const RequestSchema = z.object({
+  PaginationParams: z.object({
+    start: z.number().gt(0).optional(),
+    end: z.number().gt(0).optional(),
+  }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
+  search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
+}).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
+export type Request = z.infer<typeof RequestSchema>
+```
+
+The function signature for custom type handlers is:
+
+```go
+func(c *Converter, t reflect.Type, validate string, indent int) string
+```
+
+We can use `c` to process nested types. Indent level is for passing to other converter APIs.
+
+## Ignored Tags
+
+To ensure safety, `zen` will panic if it encounters unknown validation tags. If these tags are intentional, they should be explicitly ignored.
+
+```go
+opt := zen.WithIgnoreTags("identifier")
+c := zen.NewConverterWithOpts(opt)
+```
+
+## Custom Types
+
+We can pass type name mappings to custom conversion functions:
+
+```go
+customTypeHandlers := map[string]zen.CustomFn{
+	"github.com/shopspring/decimal.Decimal": func (c *zen.Converter, t reflect.Type, v string, indent int) string {
+		// Shopspring's decimal type serialises to a string.
+		return "z.string()"
+	},
+}
+opt := zen.WithCustomTypes(customTypeHandlers)
+c := zen.NewConverterWithOpts(opt)
+
+c.Convert(User{
+	Money decimal.Decimal
+})
+```
+
+Outputs:
+
+```typescript
+export const UserSchema = z.object({
+	Money: z.string(),
+})
+export type User = z.infer<typeof UserSchema>
+```
+
+There are some custom types with tests in the [custom](./custom) directory.
+
+The function signature for custom type handlers is:
+
+```go
+func(c *Converter, t reflect.Type, validate string, indent int) string
+```
+
+We can use `c` to process nested types. Indent level is for passing to other converter APIs.
 
 ## Caveats
 

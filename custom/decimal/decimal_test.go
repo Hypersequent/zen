@@ -11,9 +11,10 @@ import (
 )
 
 func TestCustom(t *testing.T) {
-	c := zen.NewConverter(map[string]zen.CustomFn{
+	opt := zen.WithCustomTypes(map[string]zen.CustomFn{
 		customDecimal.DecimalType: customDecimal.DecimalFunc,
 	})
+	c := zen.NewConverterWithOpts(opt)
 
 	type User struct {
 		Money decimal.Decimal

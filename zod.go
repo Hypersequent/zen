@@ -9,21 +9,73 @@ import (
 	"strings"
 )
 
-// NewConverter initializes and returns a new converter instance. The custom handler
-// function map should be keyed on the fully qualified type name (excluding generic
-// type arguments), ie. package.typename.
-func NewConverter(custom map[string]CustomFn) Converter {
-	c := Converter{
-		prefix:  "",
-		outputs: make(map[string]entry),
-		custom:  custom,
+// Opt represents a converter option used to modify its behavior.
+type Opt func(*Converter)
+
+// Adds prefix to the generated schema and type names.
+func WithPrefix(prefix string) Opt {
+	return func(c *Converter) {
+		c.prefix = prefix
+	}
+}
+
+// Adds custom handler/converters for types. The map should be keyed on
+// the fully qualified type name (excluding generic type arguments), ie.
+// package.typename.
+func WithCustomTypes(custom map[string]CustomFn) Opt {
+	return func(c *Converter) {
+		for k, v := range custom {
+			c.customTypes[k] = v
+		}
+	}
+}
+
+// Adds custom handler/converts for tags. The functions should return
+// strings like `.regex(/[a-z0-9_]+/)` or `.refine((val) => val !== 0)`
+// which can be appended to the generated schema.
+func WithCustomTags(custom map[string]CustomFn) Opt {
+	return func(c *Converter) {
+		for k, v := range custom {
+			c.customTags[k] = v
+		}
+	}
+}
+
+// Adds tags which should be ignored. Any unrecognized tag (which is also
+// not ignored) results in panic.
+func WithIgnoreTags(ignores ...string) Opt {
+	return func(c *Converter) {
+		c.ignoreTags = append(c.ignoreTags, ignores...)
+	}
+}
+
+// NewConverterWithOpts initializes and returns a new converter instance.
+func NewConverterWithOpts(opts ...Opt) *Converter {
+	c := &Converter{
+		prefix:      "",
+		customTypes: make(map[string]CustomFn),
+		customTags:  make(map[string]CustomFn),
+		ignoreTags:  []string{},
+		outputs:     make(map[string]entry),
+	}
+
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	return c
 }
 
+// Deprecated: NewConverter is deprecated. Use NewConverterWithOpts(WithCustomTypes(customTypes)) instead.
+// Example:
+//
+//	converter := NewConverterWithOpts(WithCustomTypes(customTypes))
+func NewConverter(customTypes map[string]CustomFn) Converter {
+	return *NewConverterWithOpts(WithCustomTypes(customTypes))
+}
+
 // AddType converts a struct type to corresponding zod schema. AddType can be called
-// multiple times, followed by Export to get the corresonding zod schemas.
+// multiple times, followed by Export to get the corresponding zod schemas.
 func (c *Converter) AddType(input interface{}) {
 	t := reflect.TypeOf(input)
 
@@ -65,24 +117,8 @@ func (c *Converter) ConvertSlice(inputs []interface{}) string {
 }
 
 // StructToZodSchema returns zod schema corresponding to a struct type.
-func StructToZodSchema(input interface{}) string {
-	c := Converter{
-		prefix:  "",
-		outputs: make(map[string]entry),
-	}
-
-	return c.Convert(input)
-}
-
-// StructToZodSchemaWithPrefix returns zod schema corresponding to a struct type.
-// The prefix is added to the generated schema and type names.
-func StructToZodSchemaWithPrefix(prefix string, input interface{}) string {
-	c := Converter{
-		prefix:  prefix,
-		outputs: make(map[string]entry),
-	}
-
-	return c.Convert(input)
+func StructToZodSchema(input interface{}, opts ...Opt) string {
+	return NewConverterWithOpts(opts...).Convert(input)
 }
 
 var typeMapping = map[reflect.Kind]string{
@@ -125,12 +161,13 @@ type meta struct {
 }
 
 type Converter struct {
-	prefix  string
-	structs int
-	outputs map[string]entry
-	custom  map[string]CustomFn
-	stack   []meta
-	ignores []string
+	prefix      string
+	customTypes map[string]CustomFn
+	customTags  map[string]CustomFn
+	ignoreTags  []string
+	structs     int
+	outputs     map[string]entry
+	stack       []meta
 }
 
 func (c *Converter) addSchema(name string, data string) {
@@ -313,7 +350,7 @@ func getFullName(t reflect.Type) string {
 func (c *Converter) handleCustomType(t reflect.Type, validate string, indent int) (string, bool) {
 	fullName := getFullName(t)
 
-	custom, ok := c.custom[fullName]
+	custom, ok := c.customTypes[fullName]
 	if ok {
 		return custom(c, t, validate, indent), true
 	}
@@ -345,31 +382,51 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	}
 
 	if t.Kind() == reflect.Struct {
+		var validateStr strings.Builder
+		var refines []string
 		name := typeName(t)
+		parts := strings.Split(validate, ",")
 
 		if name == "" {
 			// Handle fields with non-defined types - these are inline.
-			return c.convertStruct(t, indent)
+			validateStr.WriteString(c.convertStruct(t, indent))
 		} else if name == "Time" {
-			var validateStr string
-			if validate != "" {
-				// We compare with both the zero value from go and the zero value that zod coerces to
-				if validate == "required" {
-					validateStr = ".refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date')"
-				}
-			}
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
-			return "z.coerce.date()" + validateStr
+			validateStr.WriteString("z.coerce.date()")
 		} else {
 			if c.stack[len(c.stack)-1].name == name {
 				c.stack[len(c.stack)-1].selfRef = true
-				return fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name))
+				validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+			} else {
+				// throws panic if there is a cycle
+				detectCycle(name, c.stack)
+				c.addSchema(name, c.convertStructTopLevel(t))
+				validateStr.WriteString(schemaName(c.prefix, name))
 			}
-			// throws panic if there is a cycle
-			detectCycle(name, c.stack)
-			c.addSchema(name, c.convertStructTopLevel(t))
-			return schemaName(c.prefix, name)
 		}
+
+		for _, part := range parts {
+			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+			if done {
+				continue
+			}
+
+			switch valName {
+			case "required":
+				if name == "Time" {
+					// We compare with both the zero value from go and the zero value that zod coerces to
+					refines = append(refines, ".refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date')")
+				}
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		}
+
+		for _, refine := range refines {
+			validateStr.WriteString(refine)
+		}
+
+		return validateStr.String()
 	}
 
 	// boolean, number, string, any
@@ -441,7 +498,7 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 	// because nullability is processed before custom types, this makes sure
 	// the custom type has control over nullability.
 	fullName := getFullName(f.Type)
-	_, isCustom := c.custom[fullName]
+	_, isCustom := c.customTypes[fullName]
 
 	optionalCall := ""
 	if optional {
@@ -477,7 +534,7 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 	// because nullability is processed before custom types, this makes sure
 	// the custom type has control over nullability.
 	fullName := getFullName(f.Type)
-	_, isCustom := c.custom[fullName]
+	_, isCustom := c.customTypes[fullName]
 
 	optionalCallPre := ""
 	optionalCallUndef := ""
@@ -501,64 +558,75 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 }
 
 func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) string {
-	if t.Kind() == reflect.Array {
-		return fmt.Sprintf(
-			"%s.array()%s",
-			c.ConvertType(t.Elem(), getValidateAfterDive(validate), indent), fmt.Sprintf(".length(%d)", t.Len()))
-	}
-
 	var validateStr strings.Builder
+	var refines []string
 	validateCurrent := getValidateCurrent(validate)
-	if validateCurrent != "" {
-		parts := strings.Split(validateCurrent, ",")
+	parts := strings.Split(validateCurrent, ",")
+	isArray := t.Kind() == reflect.Array
 
-		// eq and ne should be at the end since they output a refine function
-		sort.SliceStable(parts, func(i, j int) bool {
-			if strings.HasPrefix(parts[i], "ne") {
-				return false
-			}
-			if strings.HasPrefix(parts[j], "ne") {
-				return true
-			}
-			return i < j
-		})
+forParts:
+	for _, part := range parts {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
+			continue
+		}
 
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "omitempty" {
-			} else if part == "dive" {
-				break
-			} else if part == "required" {
-			} else if strings.HasPrefix(part, "min=") {
-				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
-			} else if strings.HasPrefix(part, "max=") {
-				validateStr.WriteString(fmt.Sprintf(".max(%s)", part[4:]))
-			} else if strings.HasPrefix(part, "len=") {
-				validateStr.WriteString(fmt.Sprintf(".length(%s)", part[4:]))
-			} else if strings.HasPrefix(part, "eq=") {
-				validateStr.WriteString(fmt.Sprintf(".length(%s)", part[3:]))
-			} else if strings.HasPrefix(part, "ne=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val.length !== %s)", part[3:]))
-			} else if strings.HasPrefix(part, "gt=") {
-				val, err := strconv.Atoi(part[3:])
-				if err != nil || val < 0 {
-					panic(fmt.Sprintf("invalid gt value: %s", part[3:]))
+		if isArray {
+			panic(fmt.Sprintf("unknown validation: %s", part))
+		} else {
+			if valValue != "" {
+				switch valName {
+				case "required":
+				case "min":
+					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+				case "max":
+					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+				case "len":
+					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+				case "eq":
+					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+				case "ne":
+					refines = append(refines, fmt.Sprintf(".refine((val) => val.length !== %s)", valValue))
+				case "gt":
+					val, err := strconv.Atoi(valValue)
+					if err != nil || val < 0 {
+						panic(fmt.Sprintf("invalid gt value: %s", valValue))
+					}
+					validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
+				case "gte":
+					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+				case "lt":
+					val, err := strconv.Atoi(valValue)
+					if err != nil || val <= 0 {
+						panic(fmt.Sprintf("invalid lt value: %s", valValue))
+					}
+					validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
+				case "lte":
+					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+
+				default:
+					panic(fmt.Sprintf("unknown validation: %s", part))
 				}
-				validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
-			} else if strings.HasPrefix(part, "gte=") {
-				validateStr.WriteString(fmt.Sprintf(".min(%s)", part[4:]))
-			} else if strings.HasPrefix(part, "lt=") {
-				val, err := strconv.Atoi(part[3:])
-				if err != nil || val <= 0 {
-					panic(fmt.Sprintf("invalid lt value: %s", part[3:]))
-				}
-				validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
-			} else if strings.HasPrefix(part, "lte=") {
-				validateStr.WriteString(fmt.Sprintf(".max(%s)", part[4:]))
 			} else {
-				panic(fmt.Sprintf("unknown validation: %s", part))
+				switch valName {
+				case "omitempty":
+				case "required":
+				case "dive":
+					break forParts
+
+				default:
+					panic(fmt.Sprintf("unknown validation: %s", part))
+				}
 			}
 		}
+	}
+
+	if isArray {
+		validateStr.WriteString(fmt.Sprintf(".length(%d)", t.Len()))
+	}
+
+	for _, refine := range refines {
+		validateStr.WriteString(refine)
 	}
 
 	return fmt.Sprintf(
@@ -607,38 +675,56 @@ func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 
 func (c *Converter) convertMap(t reflect.Type, validate string, indent int) string {
 	var validateStr strings.Builder
-	if validate != "" {
-		parts := strings.Split(validate, ",")
+	var refines []string
+	parts := strings.Split(validate, ",")
 
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "omitempty" {
-			} else if part == "dive" {
-				break
-			} else if part == "required" {
-				validateStr.WriteString(".refine((val) => Object.keys(val).length > 0, 'Empty map')")
-			} else if strings.HasPrefix(part, "min=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", part[4:]))
-			} else if strings.HasPrefix(part, "max=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", part[4:]))
-			} else if strings.HasPrefix(part, "len=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", part[4:]))
-			} else if strings.HasPrefix(part, "eq=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", part[3:]))
-			} else if strings.HasPrefix(part, "ne=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length !== %s, 'Map wrong size')", part[3:]))
-			} else if strings.HasPrefix(part, "gt=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length > %s, 'Map too small')", part[3:]))
-			} else if strings.HasPrefix(part, "gte=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", part[4:]))
-			} else if strings.HasPrefix(part, "lt=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length < %s, 'Map too large')", part[3:]))
-			} else if strings.HasPrefix(part, "lte=") {
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", part[4:]))
-			} else {
+forParts:
+	for _, part := range parts {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
+			continue
+		}
+
+		if valValue != "" {
+			switch valName {
+			case "min":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
+			case "max":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
+			case "len":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
+			case "eq":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
+			case "ne":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length !== %s, 'Map wrong size')", valValue))
+			case "gt":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length > %s, 'Map too small')", valValue))
+			case "gte":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
+			case "lt":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length < %s, 'Map too large')", valValue))
+			case "lte":
+				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
+
+			default:
+				panic(fmt.Sprintf("unknown validation: %s", part))
+			}
+		} else {
+			switch valName {
+			case "omitempty":
+			case "required":
+				refines = append(refines, ".refine((val) => Object.keys(val).length > 0, 'Empty map')")
+			case "dive":
+				break forParts
+
+			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
 			}
 		}
+	}
+
+	for _, refine := range refines {
+		validateStr.WriteString(refine)
 	}
 
 	return fmt.Sprintf(`z.record(%s, %s)%s`,
@@ -712,12 +798,8 @@ func getValidateValues(validate string) string {
 	return validateValues
 }
 
-func (c *Converter) SetIgnores(validations []string) {
-	c.ignores = validations
-}
-
 func (c *Converter) checkIsIgnored(part string) bool {
-	for _, ignore := range c.ignores {
+	for _, ignore := range c.ignoreTags {
 		if part == ignore {
 			return true
 		}
@@ -729,38 +811,16 @@ func (c *Converter) checkIsIgnored(part string) bool {
 // could support unusual cases like `validate:"omitempty,min=3,max=5"`
 func (c *Converter) validateNumber(validate string) string {
 	var validateStr strings.Builder
+	var refines []string
 	parts := strings.Split(validate, ",")
 
-	// eq and ne should be at the end since they output a refine function
-	sort.SliceStable(parts, func(i, j int) bool {
-		if strings.HasPrefix(parts[i], "eq") || strings.HasPrefix(parts[i], "len") ||
-			strings.HasPrefix(parts[i], "ne") || strings.HasPrefix(parts[i], "oneof") ||
-			strings.HasPrefix(parts[i], "required") {
-			return false
-		}
-		if strings.HasPrefix(parts[j], "eq") || strings.HasPrefix(parts[j], "len") ||
-			strings.HasPrefix(parts[j], "ne") || strings.HasPrefix(parts[j], "oneof") ||
-			strings.HasPrefix(parts[j], "required") {
-			return true
-		}
-		return i < j
-	})
-
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if c.checkIsIgnored(part) {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
 
-		if strings.ContainsRune(part, '=') {
-			idx := strings.Index(part, "=")
-			if idx == 0 || idx == len(part)-1 {
-				panic(fmt.Sprintf("invalid validation: %s", part))
-			}
-
-			valName := part[:idx]
-			valValue := part[idx+1:]
-
+		if valValue != "" {
 			switch valName {
 			case "gt":
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
@@ -771,15 +831,15 @@ func (c *Converter) validateNumber(validate string) string {
 			case "lte", "max":
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
 			case "eq", "len":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === %s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "ne":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== %s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => val !== %s)", valValue))
 			case "oneof":
 				vals := strings.Fields(valValue)
 				if len(vals) == 0 {
 					panic(fmt.Sprintf("invalid oneof validation: %s", part))
 				}
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
 
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
@@ -788,11 +848,16 @@ func (c *Converter) validateNumber(validate string) string {
 			switch part {
 			case "omitempty":
 			case "required":
-				validateStr.WriteString(".refine((val) => val !== 0)")
+				refines = append(refines, ".refine((val) => val !== 0)")
+
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
 			}
 		}
+	}
+
+	for _, refine := range refines {
+		validateStr.WriteString(refine)
 	}
 
 	return validateStr.String()
@@ -800,34 +865,16 @@ func (c *Converter) validateNumber(validate string) string {
 
 func (c *Converter) validateString(validate string) string {
 	var validateStr strings.Builder
+	var refines []string
 	parts := strings.Split(validate, ",")
 
-	// eq and ne should be at the end since they output a refine function
-	sort.SliceStable(parts, func(i, j int) bool {
-		if strings.HasPrefix(parts[i], "eq") || strings.HasPrefix(parts[i], "ne") {
-			return false
-		}
-		if strings.HasPrefix(parts[j], "eq") || strings.HasPrefix(parts[j], "ne") {
-			return true
-		}
-		return i < j
-	})
-
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if c.checkIsIgnored(part) {
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		if done {
 			continue
 		}
-		// We handle the parts which have = separately
-		if strings.ContainsRune(part, '=') {
-			idx := strings.Index(part, "=")
-			if idx == 0 || idx == len(part)-1 {
-				panic(fmt.Sprintf("invalid validation: %s", part))
-			}
 
-			valName := part[:idx]
-			valValue := part[idx+1:]
-
+		if valValue != "" {
 			switch valName {
 			case "oneof":
 				vals := splitParamsRegex.FindAllString(part[6:], -1)
@@ -868,9 +915,9 @@ func (c *Converter) validateString(validate string) string {
 			case "startswith":
 				validateStr.WriteString(fmt.Sprintf(".startsWith(\"%s\")", valValue))
 			case "eq":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
 			case "ne":
-				validateStr.WriteString(fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
 
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
@@ -919,13 +966,13 @@ func (c *Converter) validateString(validate string) string {
 			case "boolean":
 				validateStr.WriteString(".enum(['true', 'false'])")
 			case "lowercase":
-				validateStr.WriteString(".refine((val) => val === val.toLowerCase())")
+				refines = append(refines, ".refine((val) => val === val.toLowerCase())")
 			case "number":
 				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numberRegexString))
 			case "numeric":
 				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numericRegexString))
 			case "uppercase":
-				validateStr.WriteString(".refine((val) => val === val.toUpperCase())")
+				refines = append(refines, ".refine((val) => val === val.toUpperCase())")
 			case "base64":
 				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", base64RegexString))
 			case "mongodb":
@@ -945,7 +992,7 @@ func (c *Converter) validateString(validate string) string {
 				//
 				//jsonSchema.parse(data);
 
-				validateStr.WriteString(".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
+				refines = append(refines, ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
 			case "jwt":
 				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", jWTRegexString))
 			case "latitude":
@@ -985,7 +1032,48 @@ func (c *Converter) validateString(validate string) string {
 		}
 	}
 
+	for _, refine := range refines {
+		validateStr.WriteString(refine)
+	}
+
 	return validateStr.String()
+}
+
+func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return "", "", true
+	}
+
+	idx := strings.Index(part, "=")
+	if idx == 0 || idx == len(part)-1 {
+		panic(fmt.Sprintf("invalid validation: %s", part))
+	}
+
+	var valName string
+	var valValue string
+	if idx == -1 {
+		valName = part
+	} else {
+		valName = part[:idx]
+		valValue = part[idx+1:]
+	}
+
+	if c.checkIsIgnored(valName) {
+		return "", "", true
+	}
+
+	if h, ok := c.customTags[valName]; ok {
+		v := h(c, reflect.TypeOf(0), valValue, 0)
+		if strings.HasPrefix(v, ".refine") {
+			*refines = append(*refines, v)
+		} else {
+			(*validateStr).WriteString(v)
+		}
+		return "", "", true
+	}
+
+	return valName, valValue, false
 }
 
 func isNullable(field reflect.StructField) bool {
@@ -1002,11 +1090,13 @@ func isNullable(field reflect.StructField) bool {
 		return false
 	}
 
+	jsonTag := field.Tag.Get("json")
+
 	// pointers can be nil, which are mapped to null in JS/TS.
 	if field.Type.Kind() == reflect.Ptr {
-		// However, if a pointer field is tagged with "omitempty", it usually cannot be exported as "null"
-		// since nil is a pointer's empty value.
-		if strings.Contains(field.Tag.Get("json"), "omitempty") {
+		// However, if a pointer field is tagged with "omitempty"/"omitzero", it usually cannot be exported
+		// as "null" since nil is a pointer's empty/zero value.
+		if strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero") {
 			// Unless it is a pointer to a slice, a map, a pointer, or an interface
 			// because values with those types can themselves be nil and will be exported as "null".
 			k := field.Type.Elem().Kind()
@@ -1019,7 +1109,7 @@ func isNullable(field reflect.StructField) bool {
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
 		// unless there are also optional in which case they are no longer nullable
-		return !strings.Contains(field.Tag.Get("json"), "omitempty")
+		return !strings.Contains(jsonTag, "omitempty") && !strings.Contains(jsonTag, "omitzero")
 	}
 
 	return false
@@ -1065,8 +1155,9 @@ func isOptional(field reflect.StructField) bool {
 		return false
 	}
 
-	// Otherwise, omitempty zero-values are omitted and are mapped to undefined in JS/TS.
-	return strings.Contains(field.Tag.Get("json"), "omitempty")
+	// Otherwise, omitempty/omitzero zero-values are omitted and are mapped to undefined in JS/TS.
+	jsonTag := field.Tag.Get("json")
+	return strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero")
 }
 
 func indentation(level int) string {
