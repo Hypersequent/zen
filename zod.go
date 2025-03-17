@@ -576,7 +576,6 @@ forParts:
 		} else {
 			if valValue != "" {
 				switch valName {
-				case "required":
 				case "min":
 					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
 				case "max":
@@ -713,7 +712,6 @@ forParts:
 			switch valName {
 			case "omitempty":
 			case "required":
-				refines = append(refines, ".refine((val) => Object.keys(val).length > 0, 'Empty map')")
 			case "dive":
 				break forParts
 

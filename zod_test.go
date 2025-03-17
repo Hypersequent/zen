@@ -1330,7 +1330,7 @@ func TestMapWithValidations(t *testing.T) {
 	}
 	assert.Equal(t,
 		`export const RequiredSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 0, 'Empty map'),
+  Map: z.record(z.string(), z.string()),
 })
 export type Required = z.infer<typeof RequiredSchema>
 
@@ -1720,7 +1720,7 @@ export const UserSchema = z.object({
   PostOptional: PostSchema.optional(),
   PostOptionalNullable: PostSchema.optional().nullable(),
   Metadata: z.record(z.string(), z.string()).nullable(),
-  MetadataLength: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 0, 'Empty map').refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 10, 'Map too large'),
+  MetadataLength: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 10, 'Map too large'),
   MetadataOptional: z.record(z.string(), z.string()).optional(),
   MetadataOptionalNullable: z.record(z.string(), z.string()).optional().nullable(),
   ExtendedProps: z.any(),
