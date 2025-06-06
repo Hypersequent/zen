@@ -1,4 +1,4 @@
-import {z} from "zod"
+import {z} from "zod/v4"
 import {describe, expect, it} from 'vitest'
 
 describe("Zod time tests", () => {
@@ -117,13 +117,13 @@ describe("Zod test everything validations", () => {
 			Age: z.number().gte(18).refine((val) => val !== 0),
 			Height: z.number().gte(1.5).refine((val) => val !== 0),
 			OldPostWithMetaData: PostWithMetaDataSchema,
-			Tags: z.string().array().nonempty().min(1),
+			Tags: z.string().array().min(1),
 			TagsOptional: z.string().array().optional(),
 			TagsOptionalNullable: z.string().array().optional().nullable(),
 			Favourites: z.object({
 				Name: z.string().min(1),
 			}).array().nullable(),
-			Posts: PostSchema.array().nonempty(),
+			Posts: PostSchema.array().min(1),
 			Post: PostSchema,
 			PostOptional: PostSchema.optional(),
 			PostOptionalNullable: PostSchema.optional().nullable(),
