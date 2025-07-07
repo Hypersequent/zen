@@ -88,10 +88,8 @@ func (c *Converter) AddType(input interface{}) {
 		return
 	}
 
-	data := c.convertStructTopLevel(t)
-	order := c.structs
-	c.outputs[name] = entry{order, data}
-	c.structs = order + 1
+	data, selfRef := c.convertStructTopLevel(t)
+	c.addSchema(name, data, selfRef)
 }
 
 // Convert returns zod schema corresponding to a struct type. Its a shorthand for
@@ -143,8 +141,9 @@ var typeMapping = map[reflect.Kind]string{
 }
 
 type entry struct {
-	order int
-	data  string
+	order   int
+	data    string
+	selfRef bool
 }
 
 type byOrder []entry
@@ -170,12 +169,12 @@ type Converter struct {
 	stack       []meta
 }
 
-func (c *Converter) addSchema(name string, data string) {
+func (c *Converter) addSchema(name string, data string, selfRef bool) {
 	// First check if the object already exists. If it does do not replace. This is needed for second order
 	_, ok := c.outputs[name]
 	if !ok {
 		order := c.structs
-		c.outputs[name] = entry{order, data}
+		c.outputs[name] = entry{order, data, selfRef}
 		c.structs = order + 1
 	}
 }
@@ -201,6 +200,10 @@ func (c *Converter) Export() string {
 
 func schemaName(prefix, name string) string {
 	return fmt.Sprintf("%s%sSchema", prefix, name)
+}
+
+func shapeName(prefix, name string) string {
+	return schemaName(prefix, name) + "Shape"
 }
 
 func fieldName(input reflect.StructField) string {
@@ -237,7 +240,7 @@ func typeName(t reflect.Type) string {
 	return "UNKNOWN"
 }
 
-func (c *Converter) convertStructTopLevel(t reflect.Type) string {
+func (c *Converter) convertStructTopLevel(t reflect.Type) (string, bool) {
 	output := strings.Builder{}
 
 	name := typeName(t)
@@ -248,11 +251,16 @@ func (c *Converter) convertStructTopLevel(t reflect.Type) string {
 
 	top := c.stack[len(c.stack)-1]
 	if top.selfRef {
+		shapeName := shapeName(c.prefix, name)
+
 		output.WriteString(fmt.Sprintf(`export type %s = %s
 `, fullName, c.getTypeStruct(t, 0)))
 
+		output.WriteString(fmt.Sprintf(`const %s = %s
+`, shapeName, c.getStructShape(t, 0)))
+
 		output.WriteString(fmt.Sprintf(
-			`export const %s: z.ZodType<%s> = %s`, schemaName(c.prefix, name), fullName, data))
+			`export const %s: z.ZodType<%s> = z.object(%s)`, schemaName(c.prefix, name), fullName, shapeName))
 	} else {
 		output.WriteString(fmt.Sprintf(
 			`export const %s = %s
@@ -264,6 +272,33 @@ func (c *Converter) convertStructTopLevel(t reflect.Type) string {
 	}
 
 	c.stack = c.stack[:len(c.stack)-1]
+
+	return output.String(), top.selfRef
+}
+
+func (c *Converter) getStructShape(input reflect.Type, indent int) string {
+	output := strings.Builder{}
+
+	output.WriteString(`{
+`)
+
+	fields := input.NumField()
+	for i := 0; i < fields; i++ {
+		field := input.Field(i)
+		optional := isOptional(field)
+		nullable := isNullable(field)
+
+		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
+
+		if !shouldMerge {
+			output.WriteString(line)
+		} else {
+			output.WriteString(fmt.Sprintf("%s...%s.shape,\n", schemaName(c.prefix, typeName(field.Type)), line))
+		}
+	}
+
+	output.WriteString(indentation(indent))
+	output.WriteString(`}`)
 
 	return output.String()
 }
@@ -282,7 +317,7 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line, shouldMerge := c.convertField(field, indent+1, optional, nullable, field.Anonymous)
+		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
 
 		if !shouldMerge {
 			output.WriteString(line)
@@ -308,21 +343,36 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 	output.WriteString(`{
 `)
 
+	merges := []string{}
+
 	fields := input.NumField()
 	for i := 0; i < fields; i++ {
 		field := input.Field(i)
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line := c.getTypeField(field, indent+1, optional, nullable)
+		line, shouldMerge := c.getTypeField(field, indent+1, optional, nullable)
 
-		output.WriteString(line)
+		if !shouldMerge {
+			output.WriteString(line)
+		} else {
+			merges = append(merges, line)
+		}
 	}
 
 	output.WriteString(indentation(indent))
 	output.WriteString(`}`)
 
-	return output.String()
+	if len(merges) == 0 {
+		return output.String()
+	}
+
+	newOutput := strings.Builder{}
+	for _, merge := range merges {
+		newOutput.WriteString(fmt.Sprintf("%s & ", merge))
+	}
+	newOutput.WriteString(output.String())
+	return newOutput.String()
 }
 
 var matchGenericTypeName = regexp.MustCompile(`(.+)\[(.+)]`)
@@ -400,7 +450,8 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 			} else {
 				// throws panic if there is a cycle
 				detectCycle(name, c.stack)
-				c.addSchema(name, c.convertStructTopLevel(t))
+				data, selfRef := c.convertStructTopLevel(t)
+				c.addSchema(name, data, selfRef)
 				validateStr.WriteString(schemaName(c.prefix, name))
 			}
 		}
@@ -487,7 +538,7 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 	return zodType
 }
 
-func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable, anonymous bool) (string, bool) {
+func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
 	name := fieldName(f)
 
 	// fields named `-` are not exported to JSON so don't export zod types
@@ -510,7 +561,7 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 	}
 
 	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
-	if !anonymous {
+	if !f.Anonymous {
 		return fmt.Sprintf(
 			"%s%s: %s%s%s,\n",
 			indentation(indent),
@@ -519,16 +570,23 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 			optionalCall,
 			nullableCall), false
 	} else {
+		typeName := typeName(f.Type)
+		entry, ok := c.outputs[typeName]
+		if ok && entry.selfRef {
+			// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
+			return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName)), false
+		}
+
 		return fmt.Sprintf(".merge(%s)", t), true
 	}
 }
 
-func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) string {
+func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
 	name := fieldName(f)
 
 	// fields named `-` are not exported to JSON so don't export types
 	if name == "-" {
-		return ""
+		return "", false
 	}
 
 	// because nullability is processed before custom types, this makes sure
@@ -547,14 +605,18 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 		nullableCall = " | null"
 	}
 
-	return fmt.Sprintf(
-		"%s%s%s: %s%s%s,\n",
-		indentation(indent),
-		name,
-		optionalCallPre,
-		c.getType(f.Type, indent),
-		nullableCall,
-		optionalCallUndef)
+	if !f.Anonymous {
+		return fmt.Sprintf(
+			"%s%s%s: %s%s%s,\n",
+			indentation(indent),
+			name,
+			optionalCallPre,
+			c.getType(f.Type, indent),
+			nullableCall,
+			optionalCallUndef), false
+	}
+
+	return typeName(f.Type), true
 }
 
 func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) string {

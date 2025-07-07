@@ -2020,14 +2020,15 @@ func TestRecursive1(t *testing.T) {
   project_id: number,
   children: NestedItem[] | null,
 }
-export const NestedItemSchema: z.ZodType<NestedItem> = z.object({
+const NestedItemSchemaShape = {
   id: z.number(),
   title: z.string(),
   pos: z.number(),
   parent_id: z.number(),
   project_id: z.number(),
   children: z.lazy(() => NestedItemSchema).array().nullable(),
-})
+}
+export const NestedItemSchema: z.ZodType<NestedItem> = z.object(NestedItemSchemaShape)
 
 `, StructToZodSchema(NestedItem{}))
 }
@@ -2046,10 +2047,11 @@ func TestRecursive2(t *testing.T) {
   value: number,
   next: Node | null,
 }
-export const NodeSchema: z.ZodType<Node> = z.object({
+const NodeSchemaShape = {
   value: z.number(),
   next: z.lazy(() => NodeSchema).nullable(),
-})
+}
+export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
 
 export const ParentSchema = z.object({
   child: NodeSchema.nullable(),
@@ -2181,4 +2183,80 @@ export const RequestSchema = z.object({
 export type Request = z.infer<typeof RequestSchema>
 
 `, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{}))
+}
+
+func TestRecursiveEmbeddedStruct(t *testing.T) {
+	type ItemA struct {
+		Name     string
+		Children []ItemA
+	}
+
+	type ItemB struct {
+		ItemA
+	}
+
+	type ItemC struct {
+		ItemB
+	}
+
+	type ItemD struct {
+		ItemA ItemA
+	}
+
+	type ItemE struct {
+		ItemA
+		Children []ItemE
+	}
+
+	type ItemF struct {
+		ItemE
+	}
+
+	c := NewConverterWithOpts()
+	c.AddType(ItemA{})
+	c.AddType(ItemB{})
+	c.AddType(ItemC{})
+	c.AddType(ItemD{})
+	c.AddType(ItemE{})
+	c.AddType(ItemF{})
+
+	assert.Equal(t, `export type ItemA = {
+  Name: string,
+  Children: ItemA[] | null,
+}
+const ItemASchemaShape = {
+  Name: z.string(),
+  Children: z.lazy(() => ItemASchema).array().nullable(),
+}
+export const ItemASchema: z.ZodType<ItemA> = z.object(ItemASchemaShape)
+
+export const ItemBSchema = z.object({
+  ...ItemASchemaShape,
+})
+export type ItemB = z.infer<typeof ItemBSchema>
+
+export const ItemCSchema = z.object({
+}).merge(ItemBSchema)
+export type ItemC = z.infer<typeof ItemCSchema>
+
+export const ItemDSchema = z.object({
+  ItemA: ItemASchema,
+})
+export type ItemD = z.infer<typeof ItemDSchema>
+
+export type ItemE = ItemA & {
+  Children: ItemE[] | null,
+}
+const ItemESchemaShape = {
+  ...ItemASchemaShape,
+  Children: z.lazy(() => ItemESchema).array().nullable(),
+}
+export const ItemESchema: z.ZodType<ItemE> = z.object(ItemESchemaShape)
+
+export const ItemFSchema = z.object({
+  ...ItemESchemaShape,
+})
+export type ItemF = z.infer<typeof ItemFSchema>
+
+`, c.Export())
 }
