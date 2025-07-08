@@ -293,7 +293,7 @@ func (c *Converter) getStructShape(input reflect.Type, indent int) string {
 		if !shouldMerge {
 			output.WriteString(line)
 		} else {
-			output.WriteString(fmt.Sprintf("%s...%s.shape,\n", schemaName(c.prefix, typeName(field.Type)), line))
+			output.WriteString(fmt.Sprintf("%s...%s.shape,\n", indentation(indent+1), schemaName(c.prefix, typeName(field.Type))))
 		}
 	}
 

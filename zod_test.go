@@ -2205,6 +2205,7 @@ func TestRecursiveEmbeddedStruct(t *testing.T) {
 
 	type ItemE struct {
 		ItemA
+		ItemD
 		Children []ItemE
 	}
 
@@ -2244,11 +2245,12 @@ export const ItemDSchema = z.object({
 })
 export type ItemD = z.infer<typeof ItemDSchema>
 
-export type ItemE = ItemA & {
+export type ItemE = ItemA & ItemD & {
   Children: ItemE[] | null,
 }
 const ItemESchemaShape = {
   ...ItemASchemaShape,
+  ...ItemDSchema.shape,
   Children: z.lazy(() => ItemESchema).array().nullable(),
 }
 export const ItemESchema: z.ZodType<ItemE> = z.object(ItemESchemaShape)
