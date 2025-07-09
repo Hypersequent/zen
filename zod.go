@@ -947,27 +947,27 @@ func (c *Converter) validateString(validate string) string {
 				// const FishEnum = z.enum(["Salmon", "Tuna", "Trout"]);
 				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"] as const)", strings.Join(vals, "\", \"")))
 			case "len":
-				validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", valValue, valValue))
 			case "min":
-				validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", valValue, valValue))
 			case "max":
-				validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", valValue, valValue))
 			case "gt":
 				val, err := strconv.Atoi(valValue)
 				if err != nil {
 					panic("gt= must be followed by a number")
 				}
-				validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1))
 			case "gte":
-				validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", valValue, valValue))
 			case "lt":
 				val, err := strconv.Atoi(valValue)
 				if err != nil {
 					panic("lt= must be followed by a number")
 				}
-				validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1))
 			case "lte":
-				validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", valValue, valValue))
 			case "contains":
 				validateStr.WriteString(fmt.Sprintf(".includes(\"%s\")", valValue))
 			case "endswith":
