@@ -394,10 +394,10 @@ func TestNullableWithValidations(t *testing.T) {
   PtrInt2: z.number().gte(2).lte(5),
   PtrIntNullable: z.number().gte(2).lte(5).nullable(),
   PtrStringOptional1: z.string().optional(),
-  PtrStringOptional2: z.string().min(2).max(5).optional(),
-  PtrString1: z.string().min(2).max(5),
-  PtrString2: z.string().min(2).max(5),
-  PtrStringNullable: z.string().min(2).max(5).nullable(),
+  PtrStringOptional2: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)').optional(),
+  PtrString1: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
+  PtrString2: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
+  PtrStringNullable: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)').nullable(),
 })
 export type User = z.infer<typeof UserSchema>
 
@@ -487,7 +487,7 @@ export type OneOfSeparated = z.infer<typeof OneOfSeparatedSchema>
 	}
 	assert.Equal(t,
 		`export const LenSchema = z.object({
-  Name: z.string().length(5),
+  Name: z.string().refine((val) => [...val].length === 5, 'String must contain 5 character(s)'),
 })
 export type Len = z.infer<typeof LenSchema>
 
@@ -499,7 +499,7 @@ export type Len = z.infer<typeof LenSchema>
 	}
 	assert.Equal(t,
 		`export const MinSchema = z.object({
-  Name: z.string().min(5),
+  Name: z.string().refine((val) => [...val].length >= 5, 'String must contain at least 5 character(s)'),
 })
 export type Min = z.infer<typeof MinSchema>
 
@@ -511,7 +511,7 @@ export type Min = z.infer<typeof MinSchema>
 	}
 	assert.Equal(t,
 		`export const MaxSchema = z.object({
-  Name: z.string().max(5),
+  Name: z.string().refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
 })
 export type Max = z.infer<typeof MaxSchema>
 
@@ -523,7 +523,7 @@ export type Max = z.infer<typeof MaxSchema>
 	}
 	assert.Equal(t,
 		`export const MinMaxSchema = z.object({
-  Name: z.string().min(3).max(7),
+  Name: z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)').refine((val) => [...val].length <= 7, 'String must contain at most 7 character(s)'),
 })
 export type MinMax = z.infer<typeof MinMaxSchema>
 
@@ -535,7 +535,7 @@ export type MinMax = z.infer<typeof MinMaxSchema>
 	}
 	assert.Equal(t,
 		`export const GtSchema = z.object({
-  Name: z.string().min(6),
+  Name: z.string().refine((val) => [...val].length > 5, 'String must contain at least 6 character(s)'),
 })
 export type Gt = z.infer<typeof GtSchema>
 
@@ -547,7 +547,7 @@ export type Gt = z.infer<typeof GtSchema>
 	}
 	assert.Equal(t,
 		`export const GteSchema = z.object({
-  Name: z.string().min(5),
+  Name: z.string().refine((val) => [...val].length >= 5, 'String must contain at least 5 character(s)'),
 })
 export type Gte = z.infer<typeof GteSchema>
 
@@ -559,7 +559,7 @@ export type Gte = z.infer<typeof GteSchema>
 	}
 	assert.Equal(t,
 		`export const LtSchema = z.object({
-  Name: z.string().max(4),
+  Name: z.string().refine((val) => [...val].length < 5, 'String must contain at most 4 character(s)'),
 })
 export type Lt = z.infer<typeof LtSchema>
 
@@ -571,7 +571,7 @@ export type Lt = z.infer<typeof LtSchema>
 	}
 	assert.Equal(t,
 		`export const LteSchema = z.object({
-  Name: z.string().max(5),
+  Name: z.string().refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
 })
 export type Lte = z.infer<typeof LteSchema>
 
@@ -1456,7 +1456,7 @@ export type Lte = z.infer<typeof LteSchema>
 	}
 	assert.Equal(t,
 		`export const Dive1Schema = z.object({
-  Map: z.record(z.string(), z.string().min(2)).nullable(),
+  Map: z.record(z.string(), z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)')).nullable(),
 })
 export type Dive1 = z.infer<typeof Dive1Schema>
 
@@ -1467,7 +1467,7 @@ export type Dive1 = z.infer<typeof Dive1Schema>
 	}
 	assert.Equal(t,
 		`export const Dive2Schema = z.object({
-  Map: z.record(z.string(), z.string().min(3)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
+  Map: z.record(z.string(), z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
 })
 export type Dive2 = z.infer<typeof Dive2Schema>
 
@@ -1478,7 +1478,7 @@ export type Dive2 = z.infer<typeof Dive2Schema>
 	}
 	assert.Equal(t,
 		`export const Dive3Schema = z.object({
-  Map: z.record(z.string().min(3), z.string().max(4)).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
+  Map: z.record(z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)'), z.string().refine((val) => [...val].length <= 4, 'String must contain at most 4 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
 })
 export type Dive3 = z.infer<typeof Dive3Schema>
 
