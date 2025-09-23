@@ -2262,3 +2262,71 @@ export type ItemF = z.infer<typeof ItemFSchema>
 
 `, c.Export())
 }
+
+func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
+	t.Run("recursive struct with pointer field and date", func(t *testing.T) {
+		type TreeNode struct {
+			Value     string
+			CreatedAt time.Time
+			Children  *[]TreeNode
+		}
+
+		type Tree struct {
+			TreeNode
+			UpdatedAt time.Time
+		}
+
+		assert.Equal(t, `export type TreeNode = {
+  Value: string,
+  CreatedAt: Date,
+  Children: TreeNode[] | null,
+}
+const TreeNodeSchemaShape = {
+  Value: z.string(),
+  CreatedAt: z.coerce.date(),
+  Children: z.lazy(() => TreeNodeSchema).array().nullable(),
+}
+export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
+
+export const TreeSchema = z.object({
+  ...TreeNodeSchemaShape,
+  UpdatedAt: z.coerce.date(),
+})
+export type Tree = z.infer<typeof TreeSchema>
+
+`, StructToZodSchema(Tree{}))
+	})
+
+	t.Run("embedded struct with pointer to self and date", func(t *testing.T) {
+		type Comment struct {
+			Text      string
+			Timestamp time.Time
+			Reply     *Comment
+		}
+
+		type Article struct {
+			Comment
+			Title string
+		}
+
+		assert.Equal(t, `export type Comment = {
+  Text: string,
+  Timestamp: Date,
+  Reply: Comment | null,
+}
+const CommentSchemaShape = {
+  Text: z.string(),
+  Timestamp: z.coerce.date(),
+  Reply: z.lazy(() => CommentSchema).nullable(),
+}
+export const CommentSchema: z.ZodType<Comment> = z.object(CommentSchemaShape)
+
+export const ArticleSchema = z.object({
+  ...CommentSchemaShape,
+  Title: z.string(),
+})
+export type Article = z.infer<typeof ArticleSchema>
+
+`, StructToZodSchema(Article{}))
+	})
+}

@@ -525,7 +525,7 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 			// Handle fields with non-defined types - these are inline.
 			return c.getTypeStruct(t, indent)
 		} else if t.Name() == "Time" {
-			return "date"
+			return "Date"
 		} else {
 			return c.prefix + name
 		}
