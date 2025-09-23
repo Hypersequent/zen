@@ -2264,19 +2264,19 @@ export type ItemF = z.infer<typeof ItemFSchema>
 }
 
 func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
-	// Test 1: Recursive struct with pointer field and date
-	type TreeNode struct {
-		Value     string
-		CreatedAt time.Time
-		Children  *[]TreeNode
-	}
+	t.Run("recursive struct with pointer field and date", func(t *testing.T) {
+		type TreeNode struct {
+			Value     string
+			CreatedAt time.Time
+			Children  *[]TreeNode
+		}
 
-	type Tree struct {
-		TreeNode
-		UpdatedAt time.Time
-	}
+		type Tree struct {
+			TreeNode
+			UpdatedAt time.Time
+		}
 
-	assert.Equal(t, `export type TreeNode = {
+		assert.Equal(t, `export type TreeNode = {
   Value: string,
   CreatedAt: Date,
   Children: TreeNode[] | null,
@@ -2295,20 +2295,21 @@ export const TreeSchema = z.object({
 export type Tree = z.infer<typeof TreeSchema>
 
 `, StructToZodSchema(Tree{}))
+	})
 
-	// Test 2: Embedded struct with pointer to self and date
-	type Comment struct {
-		Text      string
-		Timestamp time.Time
-		Reply     *Comment
-	}
+	t.Run("embedded struct with pointer to self and date", func(t *testing.T) {
+		type Comment struct {
+			Text      string
+			Timestamp time.Time
+			Reply     *Comment
+		}
 
-	type Article struct {
-		Comment
-		Title string
-	}
+		type Article struct {
+			Comment
+			Title string
+		}
 
-	assert.Equal(t, `export type Comment = {
+		assert.Equal(t, `export type Comment = {
   Text: string,
   Timestamp: Date,
   Reply: Comment | null,
@@ -2327,4 +2328,5 @@ export const ArticleSchema = z.object({
 export type Article = z.infer<typeof ArticleSchema>
 
 `, StructToZodSchema(Article{}))
+	})
 }
