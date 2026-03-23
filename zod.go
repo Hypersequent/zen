@@ -49,6 +49,13 @@ func WithIgnoreTags(ignores ...string) Opt {
 	}
 }
 
+// Emits legacy Zod v3-compatible schemas instead of the default Zod v4 output.
+func WithZodV3() Opt {
+	return func(c *Converter) {
+		c.zodV3 = true
+	}
+}
+
 // NewConverterWithOpts initializes and returns a new converter instance.
 func NewConverterWithOpts(opts ...Opt) *Converter {
 	c := &Converter{
@@ -159,11 +166,26 @@ type meta struct {
 	selfRef bool
 }
 
+type stringSchemaParts struct {
+	base      string
+	chain     string
+	enumLike  bool
+	isIPUnion bool
+}
+
+type stringSchemaChunk struct {
+	kind        string
+	text        string
+	v4Base      string
+	legacyChain string
+}
+
 type Converter struct {
 	prefix      string
 	customTypes map[string]CustomFn
 	customTags  map[string]CustomFn
 	ignoreTags  []string
+	zodV3       bool
 	structs     int
 	outputs     map[string]entry
 	stack       []meta
@@ -288,12 +310,10 @@ func (c *Converter) getStructShape(input reflect.Type, indent int) string {
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
-
-		if !shouldMerge {
-			output.WriteString(line)
+		if field.Anonymous {
+			output.WriteString(c.convertEmbeddedFieldSpread(field, indent+1))
 		} else {
-			output.WriteString(fmt.Sprintf("%s...%s.shape,\n", indentation(indent+1), schemaName(c.prefix, typeName(field.Type))))
+			output.WriteString(c.convertNamedField(field, indent+1, optional, nullable))
 		}
 	}
 
@@ -310,6 +330,7 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 `)
 
 	merges := []string{}
+	embeddedFields := []string{}
 
 	fields := input.NumField()
 	for i := 0; i < fields; i++ {
@@ -317,12 +338,25 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
-
-		if !shouldMerge {
-			output.WriteString(line)
+		if field.Anonymous {
+			if c.zodV3 {
+				line, shouldMerge := c.convertEmbeddedFieldMerge(field, indent+1)
+				if shouldMerge {
+					merges = append(merges, line)
+				} else {
+					output.WriteString(line)
+				}
+			} else {
+				embeddedFields = append(embeddedFields, c.convertEmbeddedFieldSpread(field, indent+1))
+			}
 		} else {
-			merges = append(merges, line)
+			output.WriteString(c.convertNamedField(field, indent+1, optional, nullable))
+		}
+	}
+
+	if !c.zodV3 {
+		for _, line := range embeddedFields {
+			output.WriteString(line)
 		}
 	}
 
@@ -490,9 +524,16 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	if validate != "" {
 		switch zodType {
 		case "string":
-			validateStr = c.validateString(validate)
-			if strings.Contains(validateStr, ".enum(") {
-				return "z" + validateStr
+			stringParts := c.validateString(validate)
+			switch {
+			case stringParts.enumLike:
+				return stringParts.base + stringParts.chain
+			case stringParts.isIPUnion:
+				return stringParts.base
+			case stringParts.base != "":
+				return stringParts.base + stringParts.chain
+			default:
+				return "z.string()" + stringParts.chain
 			}
 		case "number":
 			validateStr = c.validateNumber(validate)
@@ -538,12 +579,12 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 	return zodType
 }
 
-func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
+func (c *Converter) convertNamedField(f reflect.StructField, indent int, optional, nullable bool) string {
 	name := fieldName(f)
 
 	// fields named `-` are not exported to JSON so don't export zod types
 	if name == "-" {
-		return "", false
+		return ""
 	}
 
 	// because nullability is processed before custom types, this makes sure
@@ -561,24 +602,37 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 	}
 
 	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
-	if !f.Anonymous {
-		return fmt.Sprintf(
-			"%s%s: %s%s%s,\n",
-			indentation(indent),
-			name,
-			t,
-			optionalCall,
-			nullableCall), false
-	} else {
-		typeName := typeName(f.Type)
-		entry, ok := c.outputs[typeName]
-		if ok && entry.selfRef {
-			// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
-			return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName)), false
-		}
+	return fmt.Sprintf(
+		"%s%s: %s%s%s,\n",
+		indentation(indent),
+		name,
+		t,
+		optionalCall,
+		nullableCall)
+}
 
-		return fmt.Sprintf(".merge(%s)", t), true
+func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
+	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
+	typeName := typeName(f.Type)
+	entry, ok := c.outputs[typeName]
+	if ok && entry.selfRef {
+		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
+		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName)), false
 	}
+
+	return fmt.Sprintf(".merge(%s)", t), true
+}
+
+func (c *Converter) convertEmbeddedFieldSpread(f reflect.StructField, indent int) string {
+	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
+	typeName := typeName(f.Type)
+	entry, ok := c.outputs[typeName]
+	if ok && entry.selfRef {
+		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
+		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName))
+	}
+
+	return fmt.Sprintf("%s...%s.shape,\n", indentation(indent), t)
 }
 
 func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
@@ -716,9 +770,16 @@ func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 	if validate != "" {
 		switch zodType {
 		case "string":
-			validateStr = c.validateString(validate)
-			if strings.Contains(validateStr, ".enum(") {
-				return "z" + validateStr
+			stringParts := c.validateString(validate)
+			switch {
+			case stringParts.enumLike:
+				return stringParts.base + stringParts.chain
+			case stringParts.isIPUnion:
+				return stringParts.base
+			case stringParts.base != "":
+				return stringParts.base + stringParts.chain
+			default:
+				return "z.string()" + stringParts.chain
 			}
 		case "number":
 			validateStr = c.validateNumber(validate)
@@ -787,8 +848,15 @@ forParts:
 		validateStr.WriteString(refine)
 	}
 
-	return fmt.Sprintf(`z.record(%s, %s)%s`,
-		c.convertKeyType(t.Key(), getValidateKeys(validate)),
+	keySchema := c.convertKeyType(t.Key(), getValidateKeys(validate))
+	recordFn := "z.record"
+	if !c.zodV3 && isPartialRecordKeySchema(keySchema) {
+		recordFn = "z.partialRecord"
+	}
+
+	return fmt.Sprintf(`%s(%s, %s)%s`,
+		recordFn,
+		keySchema,
 		c.ConvertType(t.Elem(), getValidateValues(validate), indent),
 		validateStr.String())
 }
@@ -923,29 +991,41 @@ func (c *Converter) validateNumber(validate string) string {
 	return validateStr.String()
 }
 
-func (c *Converter) validateString(validate string) string {
-	var validateStr strings.Builder
+func (c *Converter) validateString(validate string) stringSchemaParts {
+	var chunks []stringSchemaChunk
 	var refines []string
 	parts := strings.Split(validate, ",")
 
-	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
-		if done {
+	for _, rawPart := range parts {
+		valName, valValue, skip := c.parseValidationTagPart(rawPart)
+		if skip {
+			continue
+		}
+
+		if h, ok := c.customTags[valName]; ok {
+			v := h(c, reflect.TypeOf(0), valValue, 0)
+			if strings.HasPrefix(v, ".refine") {
+				refines = append(refines, v)
+			} else {
+				chunks = append(chunks, stringSchemaChunk{kind: "chain", text: v})
+			}
 			continue
 		}
 
 		if valValue != "" {
 			switch valName {
 			case "oneof":
-				vals := splitParamsRegex.FindAllString(part[6:], -1)
+				vals := splitParamsRegex.FindAllString(rawPart[6:], -1)
 				for i := 0; i < len(vals); i++ {
 					vals[i] = strings.Replace(vals[i], "'", "", -1)
 				}
 				if len(vals) == 0 {
 					panic("oneof= must be followed by a list of values")
 				}
-				// const FishEnum = z.enum(["Salmon", "Tuna", "Trout"]);
-				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"] as const)", strings.Join(vals, "\", \"")))
+				chunks = append(chunks, stringSchemaChunk{
+					kind: "enum",
+					text: fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \"")),
+				})
 			case "len":
 				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", valValue, valValue))
 			case "min":
@@ -969,137 +1049,215 @@ func (c *Converter) validateString(validate string) string {
 			case "lte":
 				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", valValue, valValue))
 			case "contains":
-				validateStr.WriteString(fmt.Sprintf(".includes(\"%s\")", valValue))
+				chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".includes(\"%s\")", valValue)})
 			case "endswith":
-				validateStr.WriteString(fmt.Sprintf(".endsWith(\"%s\")", valValue))
+				chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".endsWith(\"%s\")", valValue)})
 			case "startswith":
-				validateStr.WriteString(fmt.Sprintf(".startsWith(\"%s\")", valValue))
+				chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".startsWith(\"%s\")", valValue)})
 			case "eq":
 				refines = append(refines, fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
 			case "ne":
 				refines = append(refines, fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
-
 			default:
-				panic(fmt.Sprintf("unknown validation: %s", part))
+				panic(fmt.Sprintf("unknown validation: %s", rawPart))
 			}
-		} else {
-			switch part {
-			case "omitempty":
-			case "required":
-				validateStr.WriteString(".min(1)")
-			case "email":
-				// email is more readable than copying the regex in regexes.go but could be incompatible
-				// Also there is an open issue https://github.com/go-playground/validator/issues/517
-				// https://github.com/puellanivis/pedantic-regexps/blob/master/email.go
-				// solution is there in the comments but not implemented yet
-				validateStr.WriteString(".email()")
-			case "url":
-				// url is more readable than copying the regex in regexes.go but could be incompatible
-				validateStr.WriteString(".url()")
-			case "ipv4":
-				validateStr.WriteString(".ip({ version: \"v4\" })")
-			case "ip4_addr":
-				validateStr.WriteString(".ip({ version: \"v4\" })")
-			case "ipv6":
-				validateStr.WriteString(".ip({ version: \"v6\" })")
-			case "ip6_addr":
-				validateStr.WriteString(".ip({ version: \"v6\" })")
-			case "ip":
-				validateStr.WriteString(".ip()")
-			case "ip_addr":
-				validateStr.WriteString(".ip()")
-			case "http_url":
-				// url is more readable than copying the regex in regexes.go but could be incompatible
-				validateStr.WriteString(".url()")
-			case "url_encoded":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString))
-			case "alpha":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaRegexString))
-			case "alphanum":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString))
-			case "alphanumunicode":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeNumericRegexString))
-			case "alphaunicode":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeRegexString))
-			case "ascii":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", aSCIIRegexString))
-			case "boolean":
-				validateStr.WriteString(".enum(['true', 'false'])")
-			case "lowercase":
-				refines = append(refines, ".refine((val) => val === val.toLowerCase())")
-			case "number":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numberRegexString))
-			case "numeric":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numericRegexString))
-			case "uppercase":
-				refines = append(refines, ".refine((val) => val === val.toUpperCase())")
-			case "base64":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", base64RegexString))
-			case "mongodb":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", mongodbRegexString))
-			case "datetime":
-				validateStr.WriteString(".datetime()")
-			case "hexadecimal":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", hexadecimalRegexString))
-			case "json":
-				// TODO: Better error messages with this
-				// const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-				//type Literal = z.infer<typeof literalSchema>;
-				//type Json = Literal | { [key: string]: Json } | Json[];
-				//const jsonSchema: z.ZodType<Json> = z.lazy(() =>
-				//  z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)])
-				//);
-				//
-				//jsonSchema.parse(data);
+			continue
+		}
 
-				refines = append(refines, ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
-			case "jwt":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", jWTRegexString))
-			case "latitude":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", latitudeRegexString))
-			case "longitude":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", longitudeRegexString))
-			case "uuid":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRegexString))
-			case "uuid3":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RegexString))
-			case "uuid3_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RFC4122RegexString))
-			case "uuid4":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RegexString))
-			case "uuid4_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RFC4122RegexString))
-			case "uuid5":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RegexString))
-			case "uuid5_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RFC4122RegexString))
-			case "uuid_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRFC4122RegexString))
-			case "md4":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md4RegexString))
-			case "md5":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md5RegexString))
-			case "sha256":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha256RegexString))
-			case "sha384":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha384RegexString))
-			case "sha512":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha512RegexString))
-
-			default:
-				panic(fmt.Sprintf("unknown validation: %s", part))
-			}
+		switch valName {
+		case "omitempty":
+		case "required":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: ".min(1)"})
+		case "email":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.email()", legacyChain: ".email()"})
+		case "url":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.url()", legacyChain: ".url()"})
+		case "ipv4", "ip4_addr":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.ipv4()", legacyChain: `.ip({ version: "v4" })`})
+		case "ipv6", "ip6_addr":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.ipv6()", legacyChain: `.ip({ version: "v6" })`})
+		case "ip", "ip_addr":
+			chunks = append(chunks, stringSchemaChunk{kind: "ip", legacyChain: ".ip()"})
+		case "http_url":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.httpUrl()", legacyChain: ".url()"})
+		case "url_encoded":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString)})
+		case "alpha":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaRegexString)})
+		case "alphanum":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString)})
+		case "alphanumunicode":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaUnicodeNumericRegexString)})
+		case "alphaunicode":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaUnicodeRegexString)})
+		case "ascii":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", aSCIIRegexString)})
+		case "boolean":
+			chunks = append(chunks, stringSchemaChunk{kind: "enum", text: "z.enum(['true', 'false'])"})
+		case "lowercase":
+			refines = append(refines, ".refine((val) => val === val.toLowerCase())")
+		case "number":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", numberRegexString)})
+		case "numeric":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", numericRegexString)})
+		case "uppercase":
+			refines = append(refines, ".refine((val) => val === val.toUpperCase())")
+		case "base64":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.base64()", legacyChain: fmt.Sprintf(".regex(/%s/)", base64RegexString)})
+		case "mongodb":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", mongodbRegexString)})
+		case "datetime":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.iso.datetime()", legacyChain: ".datetime()"})
+		case "hexadecimal":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.hex()", legacyChain: fmt.Sprintf(".regex(/%s/)", hexadecimalRegexString)})
+		case "json":
+			refines = append(refines, ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
+		case "jwt":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.jwt()", legacyChain: fmt.Sprintf(".regex(/%s/)", jWTRegexString)})
+		case "latitude":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", latitudeRegexString)})
+		case "longitude":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", longitudeRegexString)})
+		case "uuid":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.uuid()", legacyChain: fmt.Sprintf(".regex(/%s/)", uUIDRegexString)})
+		case "uuid3":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v3" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID3RegexString)})
+		case "uuid3_rfc4122":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v3" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID3RFC4122RegexString)})
+		case "uuid4":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v4" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID4RegexString)})
+		case "uuid4_rfc4122":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v4" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID4RFC4122RegexString)})
+		case "uuid5":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v5" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID5RegexString)})
+		case "uuid5_rfc4122":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.uuid({ version: "v5" })`, legacyChain: fmt.Sprintf(".regex(/%s/)", uUID5RFC4122RegexString)})
+		case "uuid_rfc4122":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: "z.uuid()", legacyChain: fmt.Sprintf(".regex(/%s/)", uUIDRFC4122RegexString)})
+		case "md4":
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", md4RegexString)})
+		case "md5":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.hash("md5")`, legacyChain: fmt.Sprintf(".regex(/%s/)", md5RegexString)})
+		case "sha256":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.hash("sha256")`, legacyChain: fmt.Sprintf(".regex(/%s/)", sha256RegexString)})
+		case "sha384":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.hash("sha384")`, legacyChain: fmt.Sprintf(".regex(/%s/)", sha384RegexString)})
+		case "sha512":
+			chunks = append(chunks, stringSchemaChunk{kind: "format", v4Base: `z.hash("sha512")`, legacyChain: fmt.Sprintf(".regex(/%s/)", sha512RegexString)})
+		default:
+			panic(fmt.Sprintf("unknown validation: %s", rawPart))
 		}
 	}
 
 	for _, refine := range refines {
-		validateStr.WriteString(refine)
+		chunks = append(chunks, stringSchemaChunk{kind: "chain", text: refine})
 	}
 
-	return validateStr.String()
+	return c.lowerStringSchemaChunks(chunks)
 }
 
-func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+func (c *Converter) lowerStringSchemaChunks(chunks []stringSchemaChunk) stringSchemaParts {
+	schemaParts := stringSchemaParts{}
+	enumIdx := -1
+	firstFormatIdx := -1
+	firstIPIdx := -1
+	hasNonIPFormat := false
+
+	for i, chunk := range chunks {
+		switch chunk.kind {
+		case "enum":
+			if enumIdx == -1 {
+				enumIdx = i
+			}
+		case "format":
+			if firstFormatIdx == -1 {
+				firstFormatIdx = i
+			}
+			hasNonIPFormat = true
+		case "ip":
+			if firstIPIdx == -1 {
+				firstIPIdx = i
+			}
+		}
+	}
+
+	if enumIdx != -1 {
+		schemaParts.base = chunks[enumIdx].text
+		schemaParts.enumLike = true
+		for i := enumIdx + 1; i < len(chunks); i++ {
+			if chunks[i].kind == "chain" && strings.HasPrefix(chunks[i].text, ".refine") {
+				schemaParts.chain += chunks[i].text
+			}
+		}
+		return schemaParts
+	}
+
+	if c.zodV3 {
+		for _, chunk := range chunks {
+			schemaParts.chain += legacyStringSchemaChunk(chunk)
+		}
+		return schemaParts
+	}
+
+	if firstIPIdx != -1 {
+		if hasNonIPFormat || hasChainBeforeStringSchemaChunk(chunks, firstIPIdx) {
+			for _, chunk := range chunks {
+				schemaParts.chain += legacyStringSchemaChunk(chunk)
+			}
+			return schemaParts
+		}
+
+		armChain := ""
+		for _, chunk := range chunks {
+			if chunk.kind == "chain" {
+				armChain += chunk.text
+			}
+		}
+		schemaParts.base = fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", armChain, armChain)
+		schemaParts.isIPUnion = true
+		return schemaParts
+	}
+
+	if firstFormatIdx == -1 || hasChainBeforeStringSchemaChunk(chunks, firstFormatIdx) {
+		for _, chunk := range chunks {
+			schemaParts.chain += legacyStringSchemaChunk(chunk)
+		}
+		return schemaParts
+	}
+
+	schemaParts.base = chunks[firstFormatIdx].v4Base
+	for i := firstFormatIdx + 1; i < len(chunks); i++ {
+		schemaParts.chain += legacyStringSchemaChunk(chunks[i])
+	}
+	return schemaParts
+}
+
+func legacyStringSchemaChunk(chunk stringSchemaChunk) string {
+	switch chunk.kind {
+	case "chain":
+		return chunk.text
+	case "format", "ip":
+		return chunk.legacyChain
+	default:
+		return ""
+	}
+}
+
+func hasChainBeforeStringSchemaChunk(chunks []stringSchemaChunk, idx int) bool {
+	for i := 0; i < idx; i++ {
+		if chunks[i].kind == "chain" {
+			return true
+		}
+	}
+	return false
+}
+
+func isPartialRecordKeySchema(schema string) bool {
+	schema = strings.TrimSpace(schema)
+	return strings.HasPrefix(schema, "z.enum(") || strings.HasPrefix(schema, "z.literal(")
+}
+
+func (c *Converter) parseValidationTagPart(part string) (string, string, bool) {
 	part = strings.TrimSpace(part)
 	if part == "" {
 		return "", "", true
@@ -1120,6 +1278,15 @@ func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, 
 	}
 
 	if c.checkIsIgnored(valName) {
+		return "", "", true
+	}
+
+	return valName, valValue, false
+}
+
+func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+	valName, valValue, done := c.parseValidationTagPart(part)
+	if done {
 		return "", "", true
 	}
 

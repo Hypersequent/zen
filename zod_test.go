@@ -94,7 +94,7 @@ func TestStructSimpleWithOmittedField(t *testing.T) {
 export type User = z.infer<typeof UserSchema>
 
 `,
-		StructToZodSchema(User{}))
+		StructToZodSchema(User{}, WithZodV3()))
 }
 
 func TestStructSimplePrefix(t *testing.T) {
@@ -144,7 +144,7 @@ export const UserSchema = z.object({
 export type User = z.infer<typeof UserSchema>
 
 `,
-		StructToZodSchema(User{}))
+		StructToZodSchema(User{}, WithZodV3()))
 }
 
 func TestStringArray(t *testing.T) {
@@ -643,7 +643,7 @@ export type Required = z.infer<typeof RequiredSchema>
 export type Email = z.infer<typeof EmailSchema>
 
 `,
-		StructToZodSchema(Email{}))
+		StructToZodSchema(Email{}, WithZodV3()))
 
 	type URL struct {
 		Name string `validate:"url"`
@@ -655,7 +655,7 @@ export type Email = z.infer<typeof EmailSchema>
 export type URL = z.infer<typeof URLSchema>
 
 `,
-		StructToZodSchema(URL{}))
+		StructToZodSchema(URL{}, WithZodV3()))
 
 	type IPv4 struct {
 		Name string `validate:"ipv4"`
@@ -667,7 +667,7 @@ export type URL = z.infer<typeof URLSchema>
 export type IPv4 = z.infer<typeof IPv4Schema>
 
 `,
-		StructToZodSchema(IPv4{}))
+		StructToZodSchema(IPv4{}, WithZodV3()))
 
 	type IPv6 struct {
 		Name string `validate:"ipv6"`
@@ -679,7 +679,7 @@ export type IPv4 = z.infer<typeof IPv4Schema>
 export type IPv6 = z.infer<typeof IPv6Schema>
 
 `,
-		StructToZodSchema(IPv6{}))
+		StructToZodSchema(IPv6{}, WithZodV3()))
 
 	type IP4Addr struct {
 		Name string `validate:"ip4_addr"`
@@ -691,7 +691,7 @@ export type IPv6 = z.infer<typeof IPv6Schema>
 export type IP4Addr = z.infer<typeof IP4AddrSchema>
 
 `,
-		StructToZodSchema(IP4Addr{}))
+		StructToZodSchema(IP4Addr{}, WithZodV3()))
 
 	type IP6Addr struct {
 		Name string `validate:"ip6_addr"`
@@ -703,7 +703,7 @@ export type IP4Addr = z.infer<typeof IP4AddrSchema>
 export type IP6Addr = z.infer<typeof IP6AddrSchema>
 
 `,
-		StructToZodSchema(IP6Addr{}))
+		StructToZodSchema(IP6Addr{}, WithZodV3()))
 
 	type IP struct {
 		Name string `validate:"ip"`
@@ -715,7 +715,7 @@ export type IP6Addr = z.infer<typeof IP6AddrSchema>
 export type IP = z.infer<typeof IPSchema>
 
 `,
-		StructToZodSchema(IP{}))
+		StructToZodSchema(IP{}, WithZodV3()))
 
 	type IPAddr struct {
 		Name string `validate:"ip_addr"`
@@ -727,7 +727,7 @@ export type IP = z.infer<typeof IPSchema>
 export type IPAddr = z.infer<typeof IPAddrSchema>
 
 `,
-		StructToZodSchema(IPAddr{}))
+		StructToZodSchema(IPAddr{}, WithZodV3()))
 
 	type HttpURL struct {
 		Name string `validate:"http_url"`
@@ -739,7 +739,7 @@ export type IPAddr = z.infer<typeof IPAddrSchema>
 export type HttpURL = z.infer<typeof HttpURLSchema>
 
 `,
-		StructToZodSchema(HttpURL{}))
+		StructToZodSchema(HttpURL{}, WithZodV3()))
 
 	type URLEncoded struct {
 		Name string `validate:"url_encoded"`
@@ -883,7 +883,7 @@ export type Uppercase = z.infer<typeof UppercaseSchema>
 export type Base64 = z.infer<typeof Base64Schema>
 
 `, base64RegexString),
-		StructToZodSchema(Base64{}))
+		StructToZodSchema(Base64{}, WithZodV3()))
 
 	type mongodb struct {
 		Name string `validate:"mongodb"`
@@ -907,7 +907,7 @@ export type mongodb = z.infer<typeof mongodbSchema>
 export type datetime = z.infer<typeof datetimeSchema>
 
 `,
-		StructToZodSchema(datetime{}))
+		StructToZodSchema(datetime{}, WithZodV3()))
 
 	type Hexadecimal struct {
 		Name string `validate:"hexadecimal"`
@@ -919,7 +919,7 @@ export type datetime = z.infer<typeof datetimeSchema>
 export type Hexadecimal = z.infer<typeof HexadecimalSchema>
 
 `, hexadecimalRegexString),
-		StructToZodSchema(Hexadecimal{}))
+		StructToZodSchema(Hexadecimal{}, WithZodV3()))
 
 	type json struct {
 		Name string `validate:"json"`
@@ -967,7 +967,7 @@ export type Longitude = z.infer<typeof LongitudeSchema>
 export type UUID = z.infer<typeof UUIDSchema>
 
 `, uUIDRegexString),
-		StructToZodSchema(UUID{}))
+		StructToZodSchema(UUID{}, WithZodV3()))
 
 	type UUID3 struct {
 		Name string `validate:"uuid3"`
@@ -979,7 +979,7 @@ export type UUID = z.infer<typeof UUIDSchema>
 export type UUID3 = z.infer<typeof UUID3Schema>
 
 `, uUID3RegexString),
-		StructToZodSchema(UUID3{}))
+		StructToZodSchema(UUID3{}, WithZodV3()))
 
 	type UUID3RFC4122 struct {
 		Name string `validate:"uuid3_rfc4122"`
@@ -991,7 +991,7 @@ export type UUID3 = z.infer<typeof UUID3Schema>
 export type UUID3RFC4122 = z.infer<typeof UUID3RFC4122Schema>
 
 `, uUID3RFC4122RegexString),
-		StructToZodSchema(UUID3RFC4122{}))
+		StructToZodSchema(UUID3RFC4122{}, WithZodV3()))
 
 	type UUID4 struct {
 		Name string `validate:"uuid4"`
@@ -1003,7 +1003,7 @@ export type UUID3RFC4122 = z.infer<typeof UUID3RFC4122Schema>
 export type UUID4 = z.infer<typeof UUID4Schema>
 
 `, uUID4RegexString),
-		StructToZodSchema(UUID4{}))
+		StructToZodSchema(UUID4{}, WithZodV3()))
 
 	type UUID4RFC4122 struct {
 		Name string `validate:"uuid4_rfc4122"`
@@ -1015,7 +1015,7 @@ export type UUID4 = z.infer<typeof UUID4Schema>
 export type UUID4RFC4122 = z.infer<typeof UUID4RFC4122Schema>
 
 `, uUID4RFC4122RegexString),
-		StructToZodSchema(UUID4RFC4122{}))
+		StructToZodSchema(UUID4RFC4122{}, WithZodV3()))
 
 	type UUID5 struct {
 		Name string `validate:"uuid5"`
@@ -1027,7 +1027,7 @@ export type UUID4RFC4122 = z.infer<typeof UUID4RFC4122Schema>
 export type UUID5 = z.infer<typeof UUID5Schema>
 
 `, uUID5RegexString),
-		StructToZodSchema(UUID5{}))
+		StructToZodSchema(UUID5{}, WithZodV3()))
 
 	type UUID5RFC4122 struct {
 		Name string `validate:"uuid5_rfc4122"`
@@ -1039,7 +1039,7 @@ export type UUID5 = z.infer<typeof UUID5Schema>
 export type UUID5RFC4122 = z.infer<typeof UUID5RFC4122Schema>
 
 `, uUID5RFC4122RegexString),
-		StructToZodSchema(UUID5RFC4122{}))
+		StructToZodSchema(UUID5RFC4122{}, WithZodV3()))
 
 	type UUIDRFC4122 struct {
 		Name string `validate:"uuid_rfc4122"`
@@ -1051,7 +1051,7 @@ export type UUID5RFC4122 = z.infer<typeof UUID5RFC4122Schema>
 export type UUIDRFC4122 = z.infer<typeof UUIDRFC4122Schema>
 
 `, uUIDRFC4122RegexString),
-		StructToZodSchema(UUIDRFC4122{}))
+		StructToZodSchema(UUIDRFC4122{}, WithZodV3()))
 
 	type MD4 struct {
 		Name string `validate:"md4"`
@@ -1075,7 +1075,7 @@ export type MD4 = z.infer<typeof MD4Schema>
 export type MD5 = z.infer<typeof MD5Schema>
 
 `, md5RegexString),
-		StructToZodSchema(MD5{}))
+		StructToZodSchema(MD5{}, WithZodV3()))
 
 	type SHA256 struct {
 		Name string `validate:"sha256"`
@@ -1087,7 +1087,7 @@ export type MD5 = z.infer<typeof MD5Schema>
 export type SHA256 = z.infer<typeof SHA256Schema>
 
 `, sha256RegexString),
-		StructToZodSchema(SHA256{}))
+		StructToZodSchema(SHA256{}, WithZodV3()))
 
 	type SHA384 struct {
 		Name string `validate:"sha384"`
@@ -1099,7 +1099,7 @@ export type SHA256 = z.infer<typeof SHA256Schema>
 export type SHA384 = z.infer<typeof SHA384Schema>
 
 `, sha384RegexString),
-		StructToZodSchema(SHA384{}))
+		StructToZodSchema(SHA384{}, WithZodV3()))
 
 	type SHA512 struct {
 		Name string `validate:"sha512"`
@@ -1111,13 +1111,205 @@ export type SHA384 = z.infer<typeof SHA384Schema>
 export type SHA512 = z.infer<typeof SHA512Schema>
 
 `, sha512RegexString),
-		StructToZodSchema(SHA512{}))
+		StructToZodSchema(SHA512{}, WithZodV3()))
 
 	type Bad2 struct {
 		Name string `validate:"bad2"`
 	}
 	assert.Panics(t, func() {
 		StructToZodSchema(Bad2{})
+	})
+}
+
+func TestZodV4Defaults(t *testing.T) {
+	t.Run("embedded structs use shape spreads", func(t *testing.T) {
+		type HasID struct {
+			ID string
+		}
+		type HasName struct {
+			Name string `json:"name"`
+		}
+		type User struct {
+			HasID
+			HasName
+			Tags []string
+		}
+
+		assert.Equal(t, `export const HasIDSchema = z.object({
+  ID: z.string(),
+})
+export type HasID = z.infer<typeof HasIDSchema>
+
+export const HasNameSchema = z.object({
+  name: z.string(),
+})
+export type HasName = z.infer<typeof HasNameSchema>
+
+export const UserSchema = z.object({
+  Tags: z.string().array().nullable(),
+  ...HasIDSchema.shape,
+  ...HasNameSchema.shape,
+})
+export type User = z.infer<typeof UserSchema>
+
+`, StructToZodSchema(User{}))
+	})
+
+	t.Run("string formats use zod v4 builders", func(t *testing.T) {
+		type Payload struct {
+			Email    string `validate:"email"`
+			Link     string `validate:"http_url"`
+			Base64   string `validate:"base64"`
+			ID       string `validate:"uuid4"`
+			Checksum string `validate:"md5"`
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  Email: z.email(),
+  Link: z.httpUrl(),
+  Base64: z.base64(),
+  ID: z.uuid({ version: "v4" }),
+  Checksum: z.hash("md5"),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, StructToZodSchema(Payload{}))
+	})
+
+	t.Run("string tag order is preserved around v4 format helpers", func(t *testing.T) {
+		type Payload struct {
+			TrimmedThenEmail string `validate:"trim,email"`
+			EmailThenTrimmed string `validate:"email,trim"`
+		}
+
+		customTagHandlers := map[string]CustomFn{
+			"trim": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return ".trim()"
+			},
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  TrimmedThenEmail: z.string().trim().email(),
+  EmailThenTrimmed: z.email().trim(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{}))
+	})
+
+	t.Run("ip unions inherit generic string constraints", func(t *testing.T) {
+		type Payload struct {
+			Address string `validate:"ip,required,max=45"`
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  Address: z.union([z.ipv4().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)'), z.ipv6().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)')]),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, StructToZodSchema(Payload{}))
+	})
+
+	t.Run("oneof takes precedence over ip specialization", func(t *testing.T) {
+		type Payload struct {
+			Address string `validate:"oneof='127.0.0.1' '::1',ip"`
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  Address: z.enum(["127.0.0.1", "::1"] as const),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, StructToZodSchema(Payload{}))
+	})
+
+	t.Run("ip mixed with another format falls back to legacy chain semantics", func(t *testing.T) {
+		type Payload struct {
+			Address string `validate:"email,ip"`
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  Address: z.string().email().ip(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, StructToZodSchema(Payload{}))
+	})
+
+	t.Run("enum keyed maps become partial records", func(t *testing.T) {
+		type Payload struct {
+			Metadata map[string]string `validate:"dive,keys,oneof=draft published,endkeys"`
+		}
+
+		assert.Equal(t, `export const PayloadSchema = z.object({
+  Metadata: z.partialRecord(z.enum(["draft", "published"] as const), z.string()).nullable(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+
+`, StructToZodSchema(Payload{}))
+	})
+
+	t.Run("recursive embedded shapes preserve encounter order for duplicate keys", func(t *testing.T) {
+		type Base struct {
+			ID string `json:"id"`
+		}
+
+		type Node struct {
+			Base
+			ID   int   `json:"id"`
+			Next *Node `json:"next"`
+		}
+
+		assert.Equal(t, `export const BaseSchema = z.object({
+  id: z.string(),
+})
+export type Base = z.infer<typeof BaseSchema>
+
+export type Node = Base & {
+  id: number,
+  next: Node | null,
+}
+const NodeSchemaShape = {
+  ...BaseSchema.shape,
+  id: z.number(),
+  next: z.lazy(() => NodeSchema).nullable(),
+}
+export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
+
+`, StructToZodSchema(Node{}))
+	})
+
+	t.Run("recursive embedded shapes keep named fields before spreads", func(t *testing.T) {
+		type TreeNode struct {
+			Value     string
+			CreatedAt time.Time
+			Children  *[]TreeNode
+		}
+
+		type Tree struct {
+			TreeNode
+			UpdatedAt time.Time
+		}
+
+		assert.Equal(t, `export type TreeNode = {
+  Value: string,
+  CreatedAt: Date,
+  Children: TreeNode[] | null,
+}
+const TreeNodeSchemaShape = {
+  Value: z.string(),
+  CreatedAt: z.coerce.date(),
+  Children: z.lazy(() => TreeNodeSchema).array().nullable(),
+}
+export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
+
+export const TreeSchema = z.object({
+  UpdatedAt: z.coerce.date(),
+  ...TreeNodeSchemaShape,
+})
+export type Tree = z.infer<typeof TreeSchema>
+
+`, StructToZodSchema(Tree{}))
 	})
 }
 
@@ -2182,7 +2374,7 @@ export const RequestSchema = z.object({
 }).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
 export type Request = z.infer<typeof RequestSchema>
 
-`, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{}))
+`, NewConverterWithOpts(WithCustomTags(customTagHandlers), WithZodV3()).Convert(Request{}))
 }
 
 func TestRecursiveEmbeddedStruct(t *testing.T) {
@@ -2213,7 +2405,7 @@ func TestRecursiveEmbeddedStruct(t *testing.T) {
 		ItemE
 	}
 
-	c := NewConverterWithOpts()
+	c := NewConverterWithOpts(WithZodV3())
 	c.AddType(ItemA{})
 	c.AddType(ItemB{})
 	c.AddType(ItemC{})
@@ -2294,7 +2486,7 @@ export const TreeSchema = z.object({
 })
 export type Tree = z.infer<typeof TreeSchema>
 
-`, StructToZodSchema(Tree{}))
+`, StructToZodSchema(Tree{}, WithZodV3()))
 	})
 
 	t.Run("embedded struct with pointer to self and date", func(t *testing.T) {
@@ -2327,6 +2519,6 @@ export const ArticleSchema = z.object({
 })
 export type Article = z.infer<typeof ArticleSchema>
 
-`, StructToZodSchema(Article{}))
+`, StructToZodSchema(Article{}, WithZodV3()))
 	})
 }

@@ -7,6 +7,8 @@ Converts Go structs with [go-validator](https://github.com/go-playground/validat
 Zen supports self-referential types and generic types. Other cyclic types (apart from self referential types) are not supported
 as they are not supported by zod itself.
 
+Zen emits Zod v4 schemas by default. Use `zen.WithZodV3()` if you need the previous output style for snapshot compatibility or incremental migration.
+
 ## Usage
 
 ```go
@@ -57,6 +59,19 @@ c.AddType(PairMap[string, int, bool]{})
 // Now export the generated schemas. Duplicate schemas are skipped
 fmt.Print(c.Export())
 ```
+
+Legacy v3-compatible output is still available:
+
+```go
+fmt.Print(zen.StructToZodSchema(User{}, zen.WithZodV3()))
+```
+
+The main migration differences are:
+
+- string format tags such as `email`, `http_url`, `ipv4`, `uuid4`, and `md5` now use Zod v4 helpers like `z.email()`, `z.httpUrl()`, `z.ipv4()`, `z.uuid({ version: "v4" })`, and `z.hash("md5")`
+- `ip` and `ip_addr` now emit `z.union([z.ipv4(), z.ipv6()])`
+- embedded anonymous structs now expand through `.shape` spreads instead of `.merge(...)`
+- enum-like map keys now emit `z.partialRecord(...)`
 
 Outputs:
 
@@ -267,7 +282,8 @@ export const RequestSchema = z.object({
     end: z.number().gt(0).optional(),
   }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
   search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
-}).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
+  ...SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}).shape,
+})
 export type Request = z.infer<typeof RequestSchema>
 ```
 
