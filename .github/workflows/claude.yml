@@ -1,0 +1,76 @@
+name: Claude Code
+
+on:
+  # issue_comment also triggers for pull request comments, since PRs are issues in GitHub
+  issue_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '^1.23.5'
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.63
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Enable progress tracking for visual feedback
+          track_progress: true
+
+          # This is an optional setting that allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+
+          # Allowed tools organized by category:
+          #  1. Core:       Task, Read, Edit, Write, Glob, Grep, WebFetch
+          #  2. Bash build: go, git, git rebase, make, gofumpt, golangci-lint, ls
+          #  3. Bash gh:    gh pr view/diff, gh issue view, gh api
+          #  4. File ops:   commit_files, update_claude_comment
+          #  5. Issues:     read, write, comment, list, search
+          #  6. PRs:        read, create, update, branch sync, list, search
+          #  7. Reviews:    pending create/add/submit, reply
+          #     NOTE: create_inline_comment and pull_request_review_write are intentionally
+          #     excluded — they create a separate review per comment. Use the pending review
+          #     flow (create → add comments → submit) to batch all comments into one review.
+          #  8. Repo:       file contents, tree, commits, code search, branches
+          #  9. CI/CD:      actions get/list, job logs
+          # 10. Security:   code scanning, secret scanning, dependabot
+          claude_args: |
+            --model claude-opus-4-6
+            --max-turns 50
+            --append-system-prompt "IMPORTANT: You MUST read and follow the CLAUDE.md file at the root of the repository before starting any work. It contains critical project conventions, commands, and patterns you must adhere to. After making ANY code changes and BEFORE committing, you MUST run formatting, linting, and tests. Follow these steps: 1. Run gofumpt -w on changed .go files. 2. Run golangci-lint run and fix any reported issues. 3. Run make test and fix any failures. Do NOT commit code that has lint errors or test failures."
+            --allowedTools "Task,Read,Edit,Write,Glob,Grep,WebFetch,Bash(go *),Bash(make *),Bash(git *),Bash(git rebase:*),Bash(gofumpt *),Bash(golangci-lint *),Bash(ls *),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh api:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__update_claude_comment,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__list_issues,mcp__github__search_issues,mcp__github__pull_request_read,mcp__github__create_pull_request,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__list_pull_requests,mcp__github__search_pull_requests,mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__add_reply_to_pull_request_comment,mcp__github__get_file_contents,mcp__github__get_repository_tree,mcp__github__list_commits,mcp__github__get_commit,mcp__github__search_code,mcp__github__create_branch,mcp__github__list_branches,mcp__github__actions_get,mcp__github__actions_list,mcp__github__get_job_logs,mcp__github__list_code_scanning_alerts,mcp__github__get_code_scanning_alert,mcp__github__list_secret_scanning_alerts,mcp__github__get_secret_scanning_alert,mcp__github__list_dependabot_alerts,mcp__github__get_dependabot_alert"
+
+        env:
+          MAX_MCP_OUTPUT_TOKENS: '50000'
