@@ -27,8 +27,7 @@ func withGoldenZodVersion(v string) goldenOpt {
 // The metadata is used by the docker type-check script to determine which zod
 // version to install and whether to include the file in type checking.
 //
-// All golden files are type-checked by default. Use withGoldenNoTypecheck() to
-// opt out of type checking for files with known issues.
+// All golden files are type-checked by default.
 func goldenAssert(t *testing.T, data []byte, opts ...goldenOpt) {
 	t.Helper()
 	var meta goldenMeta
