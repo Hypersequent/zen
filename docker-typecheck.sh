@@ -5,9 +5,6 @@
 # Golden files must contain these metadata comments to be included:
 #   // @typecheck             — present by default; files without it are skipped
 #   // @zod-version: v3|v4   — (optional) restrict to one zod major; omit for both
-#
-# Usage:
-#   ./typecheck/docker-typecheck.sh
 
 set -euo pipefail
 
