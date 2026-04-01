@@ -1,0 +1,86 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check if workflow file changed
+        id: check-workflow
+        run: |
+          CHANGED=$(gh pr diff "$PR_NUMBER" --name-only | grep -c '^\.github/workflows/claude-review\.yml$' || true)
+          echo "changed=$( [ "$CHANGED" -gt 0 ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # When this workflow file changes in a PR, OIDC auth fails because
+          # the workflow version differs from main. Fall back to the workflow's
+          # GITHUB_TOKEN (comments appear as github-actions[bot] instead of claude-bot).
+          github_token: ${{ steps.check-workflow.outputs.changed == 'true' && github.token || '' }}
+
+          # Enable progress tracking for visual feedback
+          track_progress: true
+          # Stream full tool-call output to the Actions step log for debugging
+          show_full_output: true
+
+          prompt: |
+            ## Context
+            - Owner: ${{ github.repository_owner }}
+            - Repository: ${{ github.repository }}
+            - Pull Request Number: ${{ github.event.pull_request.number }}
+
+            Read and execute the code review instructions in `.claude/commands/review-pr.md`.
+            Use the context above for all API calls.
+
+          # Allowed tools organized by category:
+          # 1. Core:     Task, Read, Glob, Grep (read-only, no Edit/Write)
+          # 2. PRs:      read, list, search, get diff
+          # 3. Reviews:  pending create/add/submit, reply
+          #    NOTE: create_inline_comment and pull_request_review_write are intentionally
+          #    excluded — they create a separate review per comment. Use the pending review
+          #    flow (create → add comments → submit) to batch all comments into one review.
+          # 4. Repo:     file contents, tree, commits, code search
+          # 5. Issues:   read, list, search
+          # 6. CI/CD:    actions get, job logs
+          # 7. Security: code scanning, secret scanning, dependabot
+          # 8. Bash gh:  gh pr view/diff, gh issue view, gh api
+          claude_args: |
+            --model claude-opus-4-6
+            --max-turns 50
+            --allowedTools "Task,Read,Glob,Grep,mcp__github__get_pull_request,mcp__github__get_pull_request_diff,mcp__github__pull_request_read,mcp__github__list_pull_requests,mcp__github__search_pull_requests,mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__add_reply_to_pull_request_comment,mcp__github__get_file_contents,mcp__github__get_repository_tree,mcp__github__list_commits,mcp__github__get_commit,mcp__github__search_code,mcp__github__issue_read,mcp__github__search_issues,mcp__github__list_issues,mcp__github__actions_get,mcp__github__get_job_logs,mcp__github__list_code_scanning_alerts,mcp__github__get_code_scanning_alert,mcp__github__list_secret_scanning_alerts,mcp__github__get_secret_scanning_alert,mcp__github__list_dependabot_alerts,mcp__github__get_dependabot_alert,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh api:*)"
+
+        env:
+          MAX_MCP_OUTPUT_TOKENS: '50000'
+
+      - name: Cleanup outdated bot reviews
+        # Run even on review failure to clean stale progress comments from prior cycles.
+        if: ${{ !cancelled() }}
+        run: python3 scripts/cleanup-pr-review.py "$OWNER" "$REPO_NAME" "$PR_NUMBER"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
