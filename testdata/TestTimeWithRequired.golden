@@ -1,3 +1,4 @@
+// @typecheck
 export const UserSchema = z.object({
   When: z.coerce.date().refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date'),
 })

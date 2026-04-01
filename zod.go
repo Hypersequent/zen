@@ -181,10 +181,10 @@ type stringSchemaChunk struct {
 }
 
 type Converter struct {
-	prefix      string
-	customTypes map[string]CustomFn
-	customTags  map[string]CustomFn
-	ignoreTags  []string
+	prefix           string
+	customTypes      map[string]CustomFn
+	customTags       map[string]CustomFn
+	ignoreTags       []string
 	zodV3            bool
 	lastFieldSelfRef bool
 	structs          int
@@ -380,7 +380,18 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 
 	merges := []string{}
 
+	// Collect own (non-anonymous) field names to detect shadowing.
 	fields := input.NumField()
+	ownFieldNames := map[string]bool{}
+	for i := 0; i < fields; i++ {
+		f := input.Field(i)
+		if !f.Anonymous {
+			if name := fieldName(f); name != "-" {
+				ownFieldNames[name] = true
+			}
+		}
+	}
+
 	for i := 0; i < fields; i++ {
 		field := input.Field(i)
 		optional := isOptional(field)
@@ -391,6 +402,27 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 		if !shouldMerge {
 			output.WriteString(line)
 		} else {
+			// When own fields shadow embedded fields, wrap in Omit<> so the
+			// TypeScript intersection doesn't produce conflicting property types.
+			embeddedType := field.Type
+			if embeddedType.Kind() == reflect.Ptr {
+				embeddedType = embeddedType.Elem()
+			}
+			var shadowedKeys []string
+			if embeddedType.Kind() == reflect.Struct {
+				for j := 0; j < embeddedType.NumField(); j++ {
+					if name := fieldName(embeddedType.Field(j)); name != "-" && ownFieldNames[name] {
+						shadowedKeys = append(shadowedKeys, name)
+					}
+				}
+			}
+			if len(shadowedKeys) > 0 {
+				quoted := make([]string, len(shadowedKeys))
+				for k, key := range shadowedKeys {
+					quoted[k] = fmt.Sprintf("'%s'", key)
+				}
+				line = fmt.Sprintf("Omit<%s, %s>", line, strings.Join(quoted, " | "))
+			}
 			merges = append(merges, line)
 		}
 	}
@@ -776,7 +808,8 @@ func (c *Converter) getTypeSliceAndArray(t reflect.Type, indent int) string {
 
 func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 	if t.Name() == "Time" {
-		return "z.coerce.date()"
+		// JSON serializes time.Time map keys as RFC3339 strings via TextMarshaler.
+		return "z.string()"
 	}
 
 	// boolean, number, string, any
@@ -1106,9 +1139,9 @@ func (c *Converter) validateString(validate string) stringSchemaParts {
 		case "alphanum":
 			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString)})
 		case "alphanumunicode":
-			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaUnicodeNumericRegexString)})
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/u)", alphaUnicodeNumericRegexString)})
 		case "alphaunicode":
-			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", alphaUnicodeRegexString)})
+			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/u)", alphaUnicodeRegexString)})
 		case "ascii":
 			chunks = append(chunks, stringSchemaChunk{kind: "chain", text: fmt.Sprintf(".regex(/%s/)", aSCIIRegexString)})
 		case "boolean":
@@ -1219,8 +1252,14 @@ func (c *Converter) lowerStringSchemaChunks(chunks []stringSchemaChunk) stringSc
 	}
 
 	if firstIPIdx != -1 {
-		if hasNonIPFormat || hasChainBeforeStringSchemaChunk(chunks, firstIPIdx) {
+		if hasNonIPFormat {
+			// In v4, .ip() doesn't exist as a chain method. Since combining
+			// ip with another format (e.g. email) is semantically nonsensical,
+			// drop the ip chunk and keep only the other format + chain pieces.
 			for _, chunk := range chunks {
+				if chunk.kind == "ip" {
+					continue
+				}
 				schemaParts.chain += legacyStringSchemaChunk(chunk)
 			}
 			return schemaParts

@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export type ItemA = {
   Name: string,
   Children: ItemA[] | null,
@@ -23,7 +25,7 @@ export const ItemDSchema = z.object({
 })
 export type ItemD = z.infer<typeof ItemDSchema>
 
-export type ItemE = ItemA & ItemD & {
+export type ItemE = Omit<ItemA, 'Children'> & ItemD & {
   Children: ItemE[] | null,
 }
 const ItemESchemaShape = {

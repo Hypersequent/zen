@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const SortParamsSchema = z.object({
   order: z.enum(["asc", "desc"] as const).optional(),
   field: z.string().optional(),

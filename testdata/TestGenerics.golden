@@ -1,3 +1,4 @@
+// @typecheck
 export const StringIntPairSchema = z.object({
   First: z.string(),
   Second: z.number(),

@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const PayloadSchema = z.object({
   Email: z.email(),
   Link: z.httpUrl(),

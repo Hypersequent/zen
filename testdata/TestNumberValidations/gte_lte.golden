@@ -1,3 +1,4 @@
+// @typecheck
 export const User1Schema = z.object({
   Age: z.number().gte(18).lte(60),
 })

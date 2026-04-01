@@ -1,3 +1,4 @@
+// @typecheck
 export const GteSchema = z.object({
   Slice: z.string().array().min(1),
 })

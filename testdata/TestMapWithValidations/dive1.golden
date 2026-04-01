@@ -1,3 +1,4 @@
+// @typecheck
 export const Dive1Schema = z.object({
   Map: z.record(z.string(), z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)')).nullable(),
 })

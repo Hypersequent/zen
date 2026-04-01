@@ -1,3 +1,5 @@
+// @zod-version: v3
+// @typecheck
 export type TreeNode = {
   Value: string,
   CreatedAt: Date,

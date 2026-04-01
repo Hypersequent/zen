@@ -1,3 +1,4 @@
+// @typecheck
 export const TestSliceFieldsStructSchema = z.object({
   NoValidate: z.number().array().nullable(),
   Required: z.number().array(),

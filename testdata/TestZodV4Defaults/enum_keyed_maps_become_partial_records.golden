@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const PayloadSchema = z.object({
   Metadata: z.partialRecord(z.enum(["draft", "published"] as const), z.string()).nullable(),
 })

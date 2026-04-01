@@ -1,3 +1,4 @@
+// @typecheck
 export const LenSchema = z.object({
   Slice: z.string().array().length(1),
 })

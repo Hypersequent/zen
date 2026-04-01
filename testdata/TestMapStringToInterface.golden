@@ -1,3 +1,4 @@
+// @typecheck
 export const UserSchema = z.object({
   Name: z.string(),
   Metadata: z.record(z.string(), z.any()).nullable(),

@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const UUIDRFC4122Schema = z.object({
   Name: z.uuid(),
 })

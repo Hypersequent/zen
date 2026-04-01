@@ -1,3 +1,5 @@
+// @zod-version: v3
+// @typecheck
 export type Comment = {
   Text: string,
   Timestamp: Date,

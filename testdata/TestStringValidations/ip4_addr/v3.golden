@@ -1,3 +1,5 @@
+// @zod-version: v3
+// @typecheck
 export const IP4AddrSchema = z.object({
   Name: z.string().ip({ version: "v4" }),
 })

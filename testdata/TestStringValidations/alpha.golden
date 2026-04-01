@@ -1,3 +1,4 @@
+// @typecheck
 export const AlphaSchema = z.object({
   Name: z.string().regex(/^[a-zA-Z]+$/),
 })

@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const UUID4Schema = z.object({
   Name: z.uuid({ version: "v4" }),
 })

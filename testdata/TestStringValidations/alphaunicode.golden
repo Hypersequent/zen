@@ -1,5 +1,6 @@
+// @typecheck
 export const AlphaUnicodeSchema = z.object({
-  Name: z.string().regex(/^[\p{L}]+$/),
+  Name: z.string().regex(/^[\p{L}]+$/u),
 })
 export type AlphaUnicode = z.infer<typeof AlphaUnicodeSchema>
 

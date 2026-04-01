@@ -1,3 +1,4 @@
+// @typecheck
 export const User7Schema = z.object({
   Age: z.number().refine((val) => val === 18),
 })

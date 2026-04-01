@@ -1,3 +1,4 @@
+// @typecheck
 export const jsonSchema = z.object({
   Name: z.string().refine((val) => { try { JSON.parse(val); return true } catch { return false } }),
 })

@@ -1,3 +1,4 @@
+// @typecheck
 export const BooleanSchema = z.object({
   Name: z.enum(['true', 'false']),
 })

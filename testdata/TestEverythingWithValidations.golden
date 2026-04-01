@@ -1,3 +1,4 @@
+// @typecheck
 export const PostSchema = z.object({
   Title: z.string().min(1),
 })

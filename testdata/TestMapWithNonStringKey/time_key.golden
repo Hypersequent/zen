@@ -1,6 +1,7 @@
+// @typecheck
 export const Map2Schema = z.object({
   Name: z.string(),
-  Metadata: z.record(z.coerce.date(), z.string()).nullable(),
+  Metadata: z.record(z.string(), z.string()).nullable(),
 })
 export type Map2 = z.infer<typeof Map2Schema>
 

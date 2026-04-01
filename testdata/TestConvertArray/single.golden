@@ -1,3 +1,4 @@
+// @typecheck
 export const ArraySchema = z.object({
   Arr: z.string().array().length(10),
 })

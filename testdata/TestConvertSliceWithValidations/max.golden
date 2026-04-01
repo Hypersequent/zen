@@ -1,3 +1,4 @@
+// @typecheck
 export const MaxSchema = z.object({
   Slice: z.string().array().max(1),
 })

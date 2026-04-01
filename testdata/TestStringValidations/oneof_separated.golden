@@ -1,3 +1,4 @@
+// @typecheck
 export const OneOfSeparatedSchema = z.object({
   Name: z.enum(["a b c", "d e f"] as const),
 })

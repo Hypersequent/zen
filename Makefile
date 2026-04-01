@@ -16,7 +16,10 @@ test-update:
 	GOLDEN_UPDATE=true $(GOCMD) test ./...
 
 
+typecheck:
+	./docker-typecheck.sh
+
 bench:
 	$(GOCMD) test -bench=. -benchmem ./...
 
-.PHONY: test test-update lint linters-install bench
+.PHONY: test test-update lint linters-install typecheck bench

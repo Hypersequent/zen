@@ -1,3 +1,4 @@
+// @typecheck
 export const LongitudeSchema = z.object({
   Name: z.string().regex(/^[-+]?(180(\.0+)?|((1[0-7]\d)|([1-9]?\d))(\.\d+)?)$/),
 })

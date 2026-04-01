@@ -1,3 +1,4 @@
+// @typecheck
 export const LteSchema = z.object({
   Name: z.string().refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
 })

@@ -1,3 +1,4 @@
+// @typecheck
 export const Dive2Schema = z.object({
   Slice: z.string().array().min(1).array(),
 })

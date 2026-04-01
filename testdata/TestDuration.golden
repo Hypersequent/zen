@@ -1,3 +1,4 @@
+// @typecheck
 export const UserSchema = z.object({
   HowLong: z.number(),
 })

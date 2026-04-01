@@ -1,3 +1,4 @@
+// @typecheck
 export const LtSchema = z.object({
   Slice: z.string().array().max(0),
 })

@@ -1,3 +1,4 @@
+// @typecheck
 export const MinMaxSchema = z.object({
   Name: z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)').refine((val) => [...val].length <= 7, 'String must contain at most 7 character(s)'),
 })

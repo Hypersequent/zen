@@ -1,3 +1,4 @@
+// @typecheck
 export const MinSchema = z.object({
   Slice: z.string().array().min(1),
 })

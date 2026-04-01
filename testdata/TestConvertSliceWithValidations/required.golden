@@ -1,3 +1,4 @@
+// @typecheck
 export const RequiredSchema = z.object({
   Slice: z.string().array(),
 })

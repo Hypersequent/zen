@@ -1,3 +1,4 @@
+// @typecheck
 export const LteSchema = z.object({
   Slice: z.string().array().max(1),
 })

@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export type Node = {
   value: number,
   next: Node | null,

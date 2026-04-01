@@ -1,3 +1,4 @@
+// @typecheck
 export const UserSchema = z.object({
   Tags: z.string().array().nullable(),
 })

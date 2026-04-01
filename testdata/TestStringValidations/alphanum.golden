@@ -1,3 +1,4 @@
+// @typecheck
 export const AlphaNumSchema = z.object({
   Name: z.string().regex(/^[a-zA-Z0-9]+$/),
 })

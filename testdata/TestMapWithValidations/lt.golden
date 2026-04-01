@@ -1,3 +1,4 @@
+// @typecheck
 export const LtSchema = z.object({
   Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large'),
 })

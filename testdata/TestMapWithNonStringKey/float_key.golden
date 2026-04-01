@@ -1,3 +1,4 @@
+// @typecheck
 export const Map3Schema = z.object({
   Name: z.string(),
   Metadata: z.record(z.coerce.number(), z.string()).nullable(),

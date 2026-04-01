@@ -1,3 +1,4 @@
+// @typecheck
 export const LenSchema = z.object({
   Name: z.string().refine((val) => [...val].length === 5, 'String must contain 5 character(s)'),
 })

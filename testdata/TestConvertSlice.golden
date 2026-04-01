@@ -1,3 +1,4 @@
+// @typecheck
 export const FooSchema = z.object({
   Bar: z.string(),
   Baz: z.string(),

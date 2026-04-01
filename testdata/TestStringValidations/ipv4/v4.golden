@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const IPv4Schema = z.object({
   Name: z.ipv4(),
 })

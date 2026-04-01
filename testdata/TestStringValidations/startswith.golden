@@ -1,3 +1,4 @@
+// @typecheck
 export const StartsWithSchema = z.object({
   Name: z.string().startsWith("hello"),
 })

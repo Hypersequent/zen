@@ -1,3 +1,5 @@
+// @zod-version: v4
+// @typecheck
 export const SHA256Schema = z.object({
   Name: z.hash("sha256"),
 })

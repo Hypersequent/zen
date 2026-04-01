@@ -1,3 +1,4 @@
+// @typecheck
 export const URLEncodedSchema = z.object({
   Name: z.string().regex(/^(?:[^%]|%[0-9A-Fa-f]{2})*$/),
 })

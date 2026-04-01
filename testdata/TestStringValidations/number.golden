@@ -1,3 +1,4 @@
+// @typecheck
 export const NumberSchema = z.object({
   Name: z.string().regex(/^[0-9]+$/),
 })

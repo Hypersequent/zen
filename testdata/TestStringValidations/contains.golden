@@ -1,3 +1,4 @@
+// @typecheck
 export const ContainsSchema = z.object({
   Name: z.string().includes("hello"),
 })

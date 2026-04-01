@@ -1,3 +1,4 @@
+// @typecheck
 export const LowercaseSchema = z.object({
   Name: z.string().refine((val) => val === val.toLowerCase()),
 })
