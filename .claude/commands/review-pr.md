@@ -27,8 +27,7 @@ Review the PR for code quality issues:
 - Magic numbers/strings that should be constants
 - Commented-out code or debug statements
 
-For Go code: Check for proper use of `validate` struct tags (NOT `binding`), correct error handling patterns, proper Bun ORM usage.
-For TypeScript/Svelte: Check for proper types (avoid `any`), top-level `import type`, Zod validation usage.
+For Go code: Check for idiomatic error handling, proper use of struct tags, correct reflect usage, and Go naming conventions.
 
 Return ONLY noteworthy issues with: file path, line number, issue description, suggested fix.
 ```
@@ -51,11 +50,10 @@ Return ONLY noteworthy issues with: file path, line number, severity (critical/h
 ```
 Review the PR for performance issues:
 - Algorithmic complexity (O(n^2) or worse operations)
-- N+1 query problems and missing database indexes
 - Unnecessary computations or redundant operations
+- Excessive allocations or reflect overhead
 - Memory leaks from unclosed resources
 - Missing caching or memoization opportunities
-- Blocking operations that should be async
 
 Return ONLY noteworthy issues with: file path, line number, issue description, performance impact, suggested optimization.
 ```
@@ -69,17 +67,6 @@ Review the PR for test coverage:
 - Test quality (proper assertions, isolation, naming)
 
 Return ONLY noteworthy gaps with: file path, what's missing, suggested test case.
-```
-
-**Subagent 5: Database/Migration Reviewer** (if migrations are in the PR)
-```
-Review database migrations for:
-- Migration correctness and reversibility
-- Proper indexes for new queries
-- HQID7 format for new entities (CHAR(23) COLLATE "C" NOT NULL)
-- Potential data loss or breaking changes
-
-Return ONLY noteworthy issues with: file path, line number, issue description, suggested fix.
 ```
 
 ## Step 3: Aggregate and Post a SINGLE Review
