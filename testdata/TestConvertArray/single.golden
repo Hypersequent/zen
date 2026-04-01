@@ -1,0 +1,5 @@
+export const ArraySchema = z.object({
+  Arr: z.string().array().length(10),
+})
+export type Array = z.infer<typeof ArraySchema>
+

@@ -1,0 +1,5 @@
+export const MaxSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
+})
+export type Max = z.infer<typeof MaxSchema>
+

@@ -1,0 +1,11 @@
+export const TestSliceFieldsStructSchema = z.object({
+  NoValidate: z.number().array().nullable(),
+  Required: z.number().array(),
+  Min: z.number().array().min(1),
+  OmitEmpty: z.number().array().nullable(),
+  JSONOmitEmpty: z.number().array().optional(),
+  MinOmitEmpty: z.number().array().min(1).nullable(),
+  JSONMinOmitEmpty: z.number().array().min(1).optional(),
+})
+export type TestSliceFieldsStruct = z.infer<typeof TestSliceFieldsStructSchema>
+

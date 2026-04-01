@@ -1,0 +1,42 @@
+export const PostSchema = z.object({
+  Title: z.string().min(1),
+})
+export type Post = z.infer<typeof PostSchema>
+
+export const PostWithMetaDataSchema = z.object({
+  Title: z.string().min(1),
+  Post: PostSchema,
+})
+export type PostWithMetaData = z.infer<typeof PostWithMetaDataSchema>
+
+export const UserSchema = z.object({
+  Name: z.string().min(1),
+  Nickname: z.string().nullable(),
+  Age: z.number().gte(18).refine((val) => val !== 0),
+  Height: z.number().gte(1.5).refine((val) => val !== 0),
+  OldPostWithMetaData: PostWithMetaDataSchema,
+  Tags: z.string().array().min(1),
+  TagsOptional: z.string().array().optional(),
+  TagsOptionalNullable: z.string().array().optional().nullable(),
+  Favourites: z.object({
+    Name: z.string().min(1),
+  }).array().nullable(),
+  Posts: PostSchema.array(),
+  Post: PostSchema,
+  PostOptional: PostSchema.optional(),
+  PostOptionalNullable: PostSchema.optional().nullable(),
+  Metadata: z.record(z.string(), z.string()).nullable(),
+  MetadataLength: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 10, 'Map too large'),
+  MetadataOptional: z.record(z.string(), z.string()).optional(),
+  MetadataOptionalNullable: z.record(z.string(), z.string()).optional().nullable(),
+  ExtendedProps: z.any(),
+  ExtendedPropsOptional: z.any(),
+  ExtendedPropsNullable: z.any(),
+  ExtendedPropsOptionalNullable: z.any(),
+  ExtendedPropsVeryIndirect: z.any(),
+  NewPostWithMetaData: PostWithMetaDataSchema,
+  VeryNewPost: PostSchema,
+  MapWithStruct: z.record(z.string(), PostWithMetaDataSchema).nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+

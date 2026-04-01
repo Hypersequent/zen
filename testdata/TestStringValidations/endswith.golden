@@ -1,0 +1,5 @@
+export const EndsWithSchema = z.object({
+  Name: z.string().endsWith("hello"),
+})
+export type EndsWith = z.infer<typeof EndsWithSchema>
+

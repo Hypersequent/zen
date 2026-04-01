@@ -1,0 +1,5 @@
+export const UUIDSchema = z.object({
+  Name: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+})
+export type UUID = z.infer<typeof UUIDSchema>
+

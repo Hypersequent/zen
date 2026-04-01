@@ -1,0 +1,17 @@
+export const FooSchema = z.object({
+  Bar: z.string(),
+  Baz: z.string(),
+  Quz: z.string(),
+})
+export type Foo = z.infer<typeof FooSchema>
+
+export const ZipSchema = z.object({
+  Zap: FooSchema.nullable(),
+})
+export type Zip = z.infer<typeof ZipSchema>
+
+export const WhimSchema = z.object({
+  Wham: FooSchema.nullable(),
+})
+export type Whim = z.infer<typeof WhimSchema>
+

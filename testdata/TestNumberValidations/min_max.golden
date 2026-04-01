@@ -1,0 +1,5 @@
+export const User6Schema = z.object({
+  Age: z.number().gte(18).lte(60),
+})
+export type User6 = z.infer<typeof User6Schema>
+

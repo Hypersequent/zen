@@ -1,0 +1,5 @@
+export const GteSchema = z.object({
+  Slice: z.string().array().min(1),
+})
+export type Gte = z.infer<typeof GteSchema>
+

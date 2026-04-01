@@ -1,0 +1,5 @@
+export const EqSchema = z.object({
+  Name: z.string().refine((val) => val === "hello"),
+})
+export type Eq = z.infer<typeof EqSchema>
+

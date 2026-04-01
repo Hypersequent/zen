@@ -1,0 +1,18 @@
+export type Comment = {
+  Text: string,
+  Timestamp: Date,
+  Reply: Comment | null,
+}
+const CommentSchemaShape = {
+  Text: z.string(),
+  Timestamp: z.coerce.date(),
+  get Reply() { return CommentSchema.nullable(); },
+}
+export const CommentSchema: z.ZodType<Comment> = z.object(CommentSchemaShape)
+
+export const ArticleSchema = z.object({
+  Title: z.string(),
+  ...CommentSchemaShape,
+})
+export type Article = z.infer<typeof ArticleSchema>
+

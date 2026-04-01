@@ -1,0 +1,5 @@
+export const MinSchema = z.object({
+  Slice: z.string().array().min(1),
+})
+export type Min = z.infer<typeof MinSchema>
+

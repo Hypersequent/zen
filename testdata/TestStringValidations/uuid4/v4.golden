@@ -1,0 +1,5 @@
+export const UUID4Schema = z.object({
+  Name: z.uuid({ version: "v4" }),
+})
+export type UUID4 = z.infer<typeof UUID4Schema>
+

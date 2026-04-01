@@ -1,0 +1,5 @@
+export const User3Schema = z.object({
+  Age: z.number().refine((val) => val === 18),
+})
+export type User3 = z.infer<typeof User3Schema>
+

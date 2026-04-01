@@ -1,0 +1,5 @@
+export const datetimeSchema = z.object({
+  Name: z.iso.datetime(),
+})
+export type datetime = z.infer<typeof datetimeSchema>
+

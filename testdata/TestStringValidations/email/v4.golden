@@ -1,0 +1,5 @@
+export const EmailSchema = z.object({
+  Name: z.email(),
+})
+export type Email = z.infer<typeof EmailSchema>
+

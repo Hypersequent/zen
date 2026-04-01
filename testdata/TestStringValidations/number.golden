@@ -1,0 +1,5 @@
+export const NumberSchema = z.object({
+  Name: z.string().regex(/^[0-9]+$/),
+})
+export type Number = z.infer<typeof NumberSchema>
+

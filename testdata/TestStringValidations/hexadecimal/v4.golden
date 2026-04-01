@@ -1,0 +1,5 @@
+export const HexadecimalSchema = z.object({
+  Name: z.hex(),
+})
+export type Hexadecimal = z.infer<typeof HexadecimalSchema>
+

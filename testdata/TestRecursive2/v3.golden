@@ -1,0 +1,15 @@
+export type Node = {
+  value: number,
+  next: Node | null,
+}
+const NodeSchemaShape = {
+  value: z.number(),
+  next: z.lazy(() => NodeSchema).nullable(),
+}
+export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
+
+export const ParentSchema = z.object({
+  child: NodeSchema.nullable(),
+})
+export type Parent = z.infer<typeof ParentSchema>
+

@@ -1,0 +1,5 @@
+export const ContainsSchema = z.object({
+  Name: z.string().includes("hello"),
+})
+export type Contains = z.infer<typeof ContainsSchema>
+

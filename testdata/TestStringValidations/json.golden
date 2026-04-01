@@ -1,0 +1,5 @@
+export const jsonSchema = z.object({
+  Name: z.string().refine((val) => { try { JSON.parse(val); return true } catch { return false } }),
+})
+export type json = z.infer<typeof jsonSchema>
+

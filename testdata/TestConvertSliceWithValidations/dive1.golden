@@ -1,0 +1,5 @@
+export const Dive1Schema = z.object({
+  Slice: z.string().array().array().nullable(),
+})
+export type Dive1 = z.infer<typeof Dive1Schema>
+

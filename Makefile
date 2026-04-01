@@ -12,7 +12,11 @@ lint: linters-install
 test:
 	$(GOCMD) test -cover -race ./...
 
+test-update:
+	GOLDEN_UPDATE=true $(GOCMD) test ./...
+
+
 bench:
 	$(GOCMD) test -bench=. -benchmem ./...
 
-.PHONY: test lint linters-install
+.PHONY: test test-update lint linters-install bench

@@ -1,0 +1,5 @@
+export const MaxSchema = z.object({
+  Slice: z.string().array().max(1),
+})
+export type Max = z.infer<typeof MaxSchema>
+

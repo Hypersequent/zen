@@ -1,0 +1,9 @@
+export const PayloadSchema = z.object({
+  Email: z.email(),
+  Link: z.httpUrl(),
+  Base64: z.base64(),
+  ID: z.uuid({ version: "v4" }),
+  Checksum: z.hash("md5"),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

@@ -1,0 +1,5 @@
+export const LatitudeSchema = z.object({
+  Name: z.string().regex(/^[-+]?([1-8]?\d(\.\d+)?|90(\.0+)?)$/),
+})
+export type Latitude = z.infer<typeof LatitudeSchema>
+

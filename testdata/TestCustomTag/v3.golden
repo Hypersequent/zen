@@ -1,0 +1,15 @@
+export const SortParamsSchema = z.object({
+  order: z.enum(["asc", "desc"] as const).optional(),
+  field: z.string().optional(),
+})
+export type SortParams = z.infer<typeof SortParamsSchema>
+
+export const RequestSchema = z.object({
+  PaginationParams: z.object({
+    start: z.number().gt(0).optional(),
+    end: z.number().gt(0).optional(),
+  }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
+  search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
+}).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
+export type Request = z.infer<typeof RequestSchema>
+

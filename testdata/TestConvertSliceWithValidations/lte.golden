@@ -1,0 +1,5 @@
+export const LteSchema = z.object({
+  Slice: z.string().array().max(1),
+})
+export type Lte = z.infer<typeof LteSchema>
+

@@ -1,0 +1,5 @@
+export const StartsWithSchema = z.object({
+  Name: z.string().startsWith("hello"),
+})
+export type StartsWith = z.infer<typeof StartsWithSchema>
+

@@ -1,0 +1,5 @@
+export const AlphaUnicodeSchema = z.object({
+  Name: z.string().regex(/^[\p{L}]+$/),
+})
+export type AlphaUnicode = z.infer<typeof AlphaUnicodeSchema>
+

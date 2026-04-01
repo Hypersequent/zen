@@ -1,0 +1,6 @@
+export const PayloadSchema = z.object({
+  TrimmedThenEmail: z.string().trim().email(),
+  EmailThenTrimmed: z.email().trim(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

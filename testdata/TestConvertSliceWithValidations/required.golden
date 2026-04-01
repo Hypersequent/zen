@@ -1,0 +1,5 @@
+export const RequiredSchema = z.object({
+  Slice: z.string().array(),
+})
+export type Required = z.infer<typeof RequiredSchema>
+

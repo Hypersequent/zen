@@ -185,10 +185,11 @@ type Converter struct {
 	customTypes map[string]CustomFn
 	customTags  map[string]CustomFn
 	ignoreTags  []string
-	zodV3       bool
-	structs     int
-	outputs     map[string]entry
-	stack       []meta
+	zodV3            bool
+	lastFieldSelfRef bool
+	structs          int
+	outputs          map[string]entry
+	stack            []meta
 }
 
 func (c *Converter) addSchema(name string, data string, selfRef bool) {
@@ -480,7 +481,12 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 		} else {
 			if c.stack[len(c.stack)-1].name == name {
 				c.stack[len(c.stack)-1].selfRef = true
-				validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+				if c.zodV3 {
+					validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+				} else {
+					c.lastFieldSelfRef = true
+					validateStr.WriteString(schemaName(c.prefix, name))
+				}
 			} else {
 				// throws panic if there is a cycle
 				detectCycle(name, c.stack)
@@ -602,6 +608,19 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 	}
 
 	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
+	isSelfRef := c.lastFieldSelfRef
+	c.lastFieldSelfRef = false
+
+	if isSelfRef && !c.zodV3 {
+		return fmt.Sprintf(
+			"%sget %s() { return %s%s%s; },\n",
+			indentation(indent),
+			name,
+			t,
+			optionalCall,
+			nullableCall)
+	}
+
 	return fmt.Sprintf(
 		"%s%s: %s%s%s,\n",
 		indentation(indent),

@@ -1,0 +1,5 @@
+export const IP4AddrSchema = z.object({
+  Name: z.ipv4(),
+})
+export type IP4Addr = z.infer<typeof IP4AddrSchema>
+

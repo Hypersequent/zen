@@ -1,0 +1,5 @@
+export const MinSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type Min = z.infer<typeof MinSchema>
+

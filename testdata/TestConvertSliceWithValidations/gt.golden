@@ -1,0 +1,5 @@
+export const GtSchema = z.object({
+  Slice: z.string().array().min(2),
+})
+export type Gt = z.infer<typeof GtSchema>
+

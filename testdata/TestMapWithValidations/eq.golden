@@ -1,0 +1,5 @@
+export const EqSchema = z.object({
+  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type Eq = z.infer<typeof EqSchema>
+

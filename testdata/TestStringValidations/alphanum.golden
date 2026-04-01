@@ -1,0 +1,5 @@
+export const AlphaNumSchema = z.object({
+  Name: z.string().regex(/^[a-zA-Z0-9]+$/),
+})
+export type AlphaNum = z.infer<typeof AlphaNumSchema>
+

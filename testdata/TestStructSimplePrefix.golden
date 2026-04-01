@@ -1,0 +1,7 @@
+export const BotUserSchema = z.object({
+  Name: z.string(),
+  Age: z.number(),
+  Height: z.number(),
+})
+export type BotUser = z.infer<typeof BotUserSchema>
+

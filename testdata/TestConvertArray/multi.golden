@@ -1,0 +1,5 @@
+export const MultiArraySchema = z.object({
+  Arr: z.string().array().length(30).array().length(20).array().length(10),
+})
+export type MultiArray = z.infer<typeof MultiArraySchema>
+

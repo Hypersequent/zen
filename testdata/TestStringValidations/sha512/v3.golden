@@ -1,0 +1,5 @@
+export const SHA512Schema = z.object({
+  Name: z.string().regex(/^[0-9a-f]{128}$/),
+})
+export type SHA512 = z.infer<typeof SHA512Schema>
+

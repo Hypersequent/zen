@@ -1,0 +1,5 @@
+export const OneOfSchema = z.object({
+  Name: z.enum(["hello", "world"] as const),
+})
+export type OneOf = z.infer<typeof OneOfSchema>
+

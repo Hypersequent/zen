@@ -1,0 +1,6 @@
+export const UserSchema = z.object({
+  Name: z.string(),
+  Nickname: z.string().optional().nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+

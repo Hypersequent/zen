@@ -1,0 +1,5 @@
+export const IPv4Schema = z.object({
+  Name: z.string().ip({ version: "v4" }),
+})
+export type IPv4 = z.infer<typeof IPv4Schema>
+

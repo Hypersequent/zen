@@ -1,0 +1,6 @@
+export const Map3Schema = z.object({
+  Name: z.string(),
+  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
+})
+export type Map3 = z.infer<typeof Map3Schema>
+

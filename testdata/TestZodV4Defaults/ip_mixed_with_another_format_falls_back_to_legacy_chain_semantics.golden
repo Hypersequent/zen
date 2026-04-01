@@ -1,0 +1,5 @@
+export const PayloadSchema = z.object({
+  Address: z.string().email().ip(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

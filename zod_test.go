@@ -8,7 +8,45 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/xorcare/golden"
 )
+
+// assertSchema is a golden file test helper for Zod schema output.
+//
+// When no versions are specified, it asserts that v3 and v4 produce identical
+// output and golden-tests that output once.
+//
+// When one version is specified ("v3" or "v4"), it golden-tests that version's
+// output directly without a subtest.
+//
+// When multiple versions are specified, it creates a subtest per version and
+// golden-tests each independently.
+func assertSchema(t *testing.T, schema any, versions ...string) {
+	t.Helper()
+
+	optsFor := func(ver string) []Opt {
+		if ver == "v3" {
+			return []Opt{WithZodV3()}
+		}
+		return nil
+	}
+
+	switch len(versions) {
+	case 0:
+		v3out := StructToZodSchema(schema, WithZodV3())
+		v4out := StructToZodSchema(schema)
+		assert.Equal(t, v3out, v4out)
+		golden.Assert(t, []byte(v4out))
+	case 1:
+		golden.Assert(t, []byte(StructToZodSchema(schema, optsFor(versions[0])...)))
+	default:
+		for _, ver := range versions {
+			t.Run(ver, func(t *testing.T) {
+				golden.Assert(t, []byte(StructToZodSchema(schema, optsFor(ver)...)))
+			})
+		}
+	}
+}
 
 func TestFieldName(t *testing.T) {
 	assert.Equal(t,
@@ -66,16 +104,7 @@ func TestStructSimple(t *testing.T) {
 		Age    int
 		Height float64
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Age: z.number(),
-  Height: z.number(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStructSimpleWithOmittedField(t *testing.T) {
@@ -85,16 +114,7 @@ func TestStructSimpleWithOmittedField(t *testing.T) {
 		Height      float64
 		NotExported string `json:"-"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Age: z.number(),
-  Height: z.number(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}, WithZodV3()))
+	assertSchema(t, User{})
 }
 
 func TestStructSimplePrefix(t *testing.T) {
@@ -103,16 +123,10 @@ func TestStructSimplePrefix(t *testing.T) {
 		Age    int
 		Height float64
 	}
-	assert.Equal(t,
-		`export const BotUserSchema = z.object({
-  Name: z.string(),
-  Age: z.number(),
-  Height: z.number(),
-})
-export type BotUser = z.infer<typeof BotUserSchema>
-
-`,
-		StructToZodSchema(User{}, WithPrefix("Bot")))
+	v3out := StructToZodSchema(User{}, WithPrefix("Bot"), WithZodV3())
+	v4out := StructToZodSchema(User{}, WithPrefix("Bot"))
+	assert.Equal(t, v3out, v4out)
+	golden.Assert(t, []byte(v4out))
 }
 
 func TestNestedStruct(t *testing.T) {
@@ -127,38 +141,14 @@ func TestNestedStruct(t *testing.T) {
 		HasName
 		Tags []string
 	}
-	assert.Equal(t,
-		`export const HasIDSchema = z.object({
-  ID: z.string(),
-})
-export type HasID = z.infer<typeof HasIDSchema>
-
-export const HasNameSchema = z.object({
-  name: z.string(),
-})
-export type HasName = z.infer<typeof HasNameSchema>
-
-export const UserSchema = z.object({
-  Tags: z.string().array().nullable(),
-}).merge(HasIDSchema).merge(HasNameSchema)
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}, WithZodV3()))
+	assertSchema(t, User{}, "v3", "v4")
 }
 
 func TestStringArray(t *testing.T) {
 	type User struct {
 		Tags []string
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Tags: z.string().array().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringNestedArray(t *testing.T) {
@@ -166,14 +156,7 @@ func TestStringNestedArray(t *testing.T) {
 	type User struct {
 		TagPairs []TagPair
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  TagPairs: z.string().array().length(2).array().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStructSlice(t *testing.T) {
@@ -182,16 +165,7 @@ func TestStructSlice(t *testing.T) {
 			Name string
 		}
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Favourites: z.object({
-    Name: z.string(),
-  }).array().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStructSliceOptional(t *testing.T) {
@@ -200,16 +174,7 @@ func TestStructSliceOptional(t *testing.T) {
 			Name string
 		} `json:",omitempty"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Favourites: z.object({
-    Name: z.string(),
-  }).array().optional(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStructSliceOptionalNullable(t *testing.T) {
@@ -218,16 +183,7 @@ func TestStructSliceOptionalNullable(t *testing.T) {
 			Name string
 		} `json:",omitempty"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Favourites: z.object({
-    Name: z.string(),
-  }).array().optional().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringOptional(t *testing.T) {
@@ -235,15 +191,7 @@ func TestStringOptional(t *testing.T) {
 		Name     string
 		Nickname string `json:",omitempty"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Nickname: z.string().optional(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringNullable(t *testing.T) {
@@ -251,15 +199,7 @@ func TestStringNullable(t *testing.T) {
 		Name     string
 		Nickname *string
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Nickname: z.string().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringOptionalNotNullable(t *testing.T) {
@@ -267,15 +207,7 @@ func TestStringOptionalNotNullable(t *testing.T) {
 		Name     string
 		Nickname *string `json:",omitempty"` // nil values are omitted
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Nickname: z.string().optional(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringOptionalNullable(t *testing.T) {
@@ -283,15 +215,7 @@ func TestStringOptionalNullable(t *testing.T) {
 		Name     string
 		Nickname **string `json:",omitempty"` // nil values are omitted
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Nickname: z.string().optional().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringArrayNullable(t *testing.T) {
@@ -299,15 +223,7 @@ func TestStringArrayNullable(t *testing.T) {
 		Name string
 		Tags []*string
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Tags: z.string().array().nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestNullableWithValidations(t *testing.T) {
@@ -365,759 +281,418 @@ func TestNullableWithValidations(t *testing.T) {
 		// StringNullable2        string `json:",omitempty" validate:"omitempty,min=2,max=5"`
 	}
 
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string().min(1),
-  PtrMapOptionalNullable1: z.record(z.string(), z.any()).optional().nullable(),
-  PtrMapOptionalNullable2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').optional().nullable(),
-  PtrMap1: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
-  PtrMap2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
-  PtrMapNullable: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').nullable(),
-  MapOptional1: z.record(z.string(), z.any()).optional(),
-  MapOptional2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').optional(),
-  Map1: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
-  Map2: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large'),
-  MapNullable: z.record(z.string(), z.any()).refine((val) => Object.keys(val).length >= 2, 'Map too small').refine((val) => Object.keys(val).length <= 5, 'Map too large').nullable(),
-  PtrSliceOptionalNullable1: z.string().array().optional().nullable(),
-  PtrSliceOptionalNullable2: z.string().array().min(2).max(5).optional().nullable(),
-  PtrSlice1: z.string().array().min(2).max(5),
-  PtrSlice2: z.string().array().min(2).max(5),
-  PtrSliceNullable: z.string().array().min(2).max(5).nullable(),
-  SliceOptional1: z.string().array().optional(),
-  SliceOptional2: z.string().array().min(2).max(5).optional(),
-  Slice1: z.string().array().min(2).max(5),
-  Slice2: z.string().array().min(2).max(5),
-  SliceNullable: z.string().array().min(2).max(5).nullable(),
-  PtrIntOptional1: z.number().optional(),
-  PtrIntOptional2: z.number().gte(2).lte(5).optional(),
-  PtrInt1: z.number().gte(2).lte(5),
-  PtrInt2: z.number().gte(2).lte(5),
-  PtrIntNullable: z.number().gte(2).lte(5).nullable(),
-  PtrStringOptional1: z.string().optional(),
-  PtrStringOptional2: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)').optional(),
-  PtrString1: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
-  PtrString2: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
-  PtrStringNullable: z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)').refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)').nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestStringValidations(t *testing.T) {
-	type Eq struct {
-		Name string `validate:"eq=hello"`
-	}
-	assert.Equal(t,
-		`export const EqSchema = z.object({
-  Name: z.string().refine((val) => val === "hello"),
-})
-export type Eq = z.infer<typeof EqSchema>
-
-`,
-		StructToZodSchema(Eq{}))
-
-	type Ne struct {
-		Name string `validate:"ne=hello"`
-	}
-	assert.Equal(t,
-		`export const NeSchema = z.object({
-  Name: z.string().refine((val) => val !== "hello"),
-})
-export type Ne = z.infer<typeof NeSchema>
-
-`,
-		StructToZodSchema(Ne{}))
-
-	type OneOf struct {
-		Name string `validate:"oneof=hello world"`
-	}
-	assert.Equal(t,
-		`export const OneOfSchema = z.object({
-  Name: z.enum(["hello", "world"] as const),
-})
-export type OneOf = z.infer<typeof OneOfSchema>
-
-`,
-		StructToZodSchema(OneOf{}))
-
-	type OneOfSeparated struct {
-		Name string `validate:"oneof='a b c' 'd e f'"`
-	}
-	assert.Equal(t,
-		`export const OneOfSeparatedSchema = z.object({
-  Name: z.enum(["a b c", "d e f"] as const),
-})
-export type OneOfSeparated = z.infer<typeof OneOfSeparatedSchema>
-
-`,
-		StructToZodSchema(OneOfSeparated{}))
-
-	// TODO: This test case is not supported yet even for the go-validator package whose logic
-	// I stole to parse the value after oneof=.
-	//
-	//	type OneOfEscaped struct {
-	//		Name string `validate:"oneof='a b c' 'd e f' 'g\\' h'"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const OneOfEscapedSchema = z.object({
-	//  Name: z.string().enum(["a b c", "d e f", "g' h"]),
-	//})
-	//export type OneOfEscaped = z.infer<typeof OneOfEscapedSchema>
-	//
-	//`,
-	//		StructToZodSchema(OneOfEscaped{}))
-
-	// Same story as above.
-	//	type OneOfEscaped2 struct {
-	//		Name string `validate:"oneof='a b c' 'd e f' 'g\x27 h'"`
-	//	}
-	//	assert.Equal(t,
-	//		`export const OneOfEscapedSchema = z.object({
-	//  Name: z.string().enum(["a b c", "d e f", "g' h"]),
-	//})
-	//export type OneOfEscaped = z.infer<typeof OneOfEscapedSchema>
-	//
-	//`,
-	//		StructToZodSchema(OneOfEscaped2{}))
-
-	type Len struct {
-		Name string `validate:"len=5"`
-	}
-	assert.Equal(t,
-		`export const LenSchema = z.object({
-  Name: z.string().refine((val) => [...val].length === 5, 'String must contain 5 character(s)'),
-})
-export type Len = z.infer<typeof LenSchema>
-
-`,
-		StructToZodSchema(Len{}))
-
-	type Min struct {
-		Name string `validate:"min=5"`
-	}
-	assert.Equal(t,
-		`export const MinSchema = z.object({
-  Name: z.string().refine((val) => [...val].length >= 5, 'String must contain at least 5 character(s)'),
-})
-export type Min = z.infer<typeof MinSchema>
-
-`,
-		StructToZodSchema(Min{}))
-
-	type Max struct {
-		Name string `validate:"max=5"`
-	}
-	assert.Equal(t,
-		`export const MaxSchema = z.object({
-  Name: z.string().refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
-})
-export type Max = z.infer<typeof MaxSchema>
-
-`,
-		StructToZodSchema(Max{}))
-
-	type MinMax struct {
-		Name string `validate:"min=3,max=7"`
-	}
-	assert.Equal(t,
-		`export const MinMaxSchema = z.object({
-  Name: z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)').refine((val) => [...val].length <= 7, 'String must contain at most 7 character(s)'),
-})
-export type MinMax = z.infer<typeof MinMaxSchema>
-
-`,
-		StructToZodSchema(MinMax{}))
-
-	type Gt struct {
-		Name string `validate:"gt=5"`
-	}
-	assert.Equal(t,
-		`export const GtSchema = z.object({
-  Name: z.string().refine((val) => [...val].length > 5, 'String must contain at least 6 character(s)'),
-})
-export type Gt = z.infer<typeof GtSchema>
-
-`,
-		StructToZodSchema(Gt{}))
-
-	type Gte struct {
-		Name string `validate:"gte=5"`
-	}
-	assert.Equal(t,
-		`export const GteSchema = z.object({
-  Name: z.string().refine((val) => [...val].length >= 5, 'String must contain at least 5 character(s)'),
-})
-export type Gte = z.infer<typeof GteSchema>
-
-`,
-		StructToZodSchema(Gte{}))
-
-	type Lt struct {
-		Name string `validate:"lt=5"`
-	}
-	assert.Equal(t,
-		`export const LtSchema = z.object({
-  Name: z.string().refine((val) => [...val].length < 5, 'String must contain at most 4 character(s)'),
-})
-export type Lt = z.infer<typeof LtSchema>
-
-`,
-		StructToZodSchema(Lt{}))
-
-	type Lte struct {
-		Name string `validate:"lte=5"`
-	}
-	assert.Equal(t,
-		`export const LteSchema = z.object({
-  Name: z.string().refine((val) => [...val].length <= 5, 'String must contain at most 5 character(s)'),
-})
-export type Lte = z.infer<typeof LteSchema>
-
-`,
-		StructToZodSchema(Lte{}))
-
-	type Contains struct {
-		Name string `validate:"contains=hello"`
-	}
-	assert.Equal(t,
-		`export const ContainsSchema = z.object({
-  Name: z.string().includes("hello"),
-})
-export type Contains = z.infer<typeof ContainsSchema>
-
-`,
-		StructToZodSchema(Contains{}))
-
-	type EndsWith struct {
-		Name string `validate:"endswith=hello"`
-	}
-	assert.Equal(t,
-		`export const EndsWithSchema = z.object({
-  Name: z.string().endsWith("hello"),
-})
-export type EndsWith = z.infer<typeof EndsWithSchema>
-
-`,
-		StructToZodSchema(EndsWith{}))
-
-	type StartsWith struct {
-		Name string `validate:"startswith=hello"`
-	}
-	assert.Equal(t,
-		`export const StartsWithSchema = z.object({
-  Name: z.string().startsWith("hello"),
-})
-export type StartsWith = z.infer<typeof StartsWithSchema>
-
-`,
-		StructToZodSchema(StartsWith{}))
-
-	type Bad struct {
-		Name string `validate:"bad=hello"`
-	}
-	assert.Panics(t, func() {
-		StructToZodSchema(Bad{})
+	t.Run("eq", func(t *testing.T) {
+		type Eq struct {
+			Name string `validate:"eq=hello"`
+		}
+		assertSchema(t, Eq{})
 	})
 
-	type Required struct {
-		Name string `validate:"required"`
-	}
-	assert.Equal(t,
-		`export const RequiredSchema = z.object({
-  Name: z.string().min(1),
-})
-export type Required = z.infer<typeof RequiredSchema>
-
-`,
-		StructToZodSchema(Required{}))
-
-	type Email struct {
-		Name string `validate:"email"`
-	}
-	assert.Equal(t,
-		`export const EmailSchema = z.object({
-  Name: z.string().email(),
-})
-export type Email = z.infer<typeof EmailSchema>
-
-`,
-		StructToZodSchema(Email{}, WithZodV3()))
-
-	type URL struct {
-		Name string `validate:"url"`
-	}
-	assert.Equal(t,
-		`export const URLSchema = z.object({
-  Name: z.string().url(),
-})
-export type URL = z.infer<typeof URLSchema>
-
-`,
-		StructToZodSchema(URL{}, WithZodV3()))
-
-	type IPv4 struct {
-		Name string `validate:"ipv4"`
-	}
-	assert.Equal(t,
-		`export const IPv4Schema = z.object({
-  Name: z.string().ip({ version: "v4" }),
-})
-export type IPv4 = z.infer<typeof IPv4Schema>
-
-`,
-		StructToZodSchema(IPv4{}, WithZodV3()))
-
-	type IPv6 struct {
-		Name string `validate:"ipv6"`
-	}
-	assert.Equal(t,
-		`export const IPv6Schema = z.object({
-  Name: z.string().ip({ version: "v6" }),
-})
-export type IPv6 = z.infer<typeof IPv6Schema>
-
-`,
-		StructToZodSchema(IPv6{}, WithZodV3()))
-
-	type IP4Addr struct {
-		Name string `validate:"ip4_addr"`
-	}
-	assert.Equal(t,
-		`export const IP4AddrSchema = z.object({
-  Name: z.string().ip({ version: "v4" }),
-})
-export type IP4Addr = z.infer<typeof IP4AddrSchema>
-
-`,
-		StructToZodSchema(IP4Addr{}, WithZodV3()))
-
-	type IP6Addr struct {
-		Name string `validate:"ip6_addr"`
-	}
-	assert.Equal(t,
-		`export const IP6AddrSchema = z.object({
-  Name: z.string().ip({ version: "v6" }),
-})
-export type IP6Addr = z.infer<typeof IP6AddrSchema>
-
-`,
-		StructToZodSchema(IP6Addr{}, WithZodV3()))
-
-	type IP struct {
-		Name string `validate:"ip"`
-	}
-	assert.Equal(t,
-		`export const IPSchema = z.object({
-  Name: z.string().ip(),
-})
-export type IP = z.infer<typeof IPSchema>
-
-`,
-		StructToZodSchema(IP{}, WithZodV3()))
-
-	type IPAddr struct {
-		Name string `validate:"ip_addr"`
-	}
-	assert.Equal(t,
-		`export const IPAddrSchema = z.object({
-  Name: z.string().ip(),
-})
-export type IPAddr = z.infer<typeof IPAddrSchema>
-
-`,
-		StructToZodSchema(IPAddr{}, WithZodV3()))
-
-	type HttpURL struct {
-		Name string `validate:"http_url"`
-	}
-	assert.Equal(t,
-		`export const HttpURLSchema = z.object({
-  Name: z.string().url(),
-})
-export type HttpURL = z.infer<typeof HttpURLSchema>
-
-`,
-		StructToZodSchema(HttpURL{}, WithZodV3()))
-
-	type URLEncoded struct {
-		Name string `validate:"url_encoded"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const URLEncodedSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type URLEncoded = z.infer<typeof URLEncodedSchema>
-
-`, uRLEncodedRegexString),
-		StructToZodSchema(URLEncoded{}))
-
-	type Alpha struct {
-		Name string `validate:"alpha"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const AlphaSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Alpha = z.infer<typeof AlphaSchema>
-
-`, alphaRegexString),
-		StructToZodSchema(Alpha{}))
-
-	type AlphaNum struct {
-		Name string `validate:"alphanum"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const AlphaNumSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type AlphaNum = z.infer<typeof AlphaNumSchema>
-
-`, alphaNumericRegexString),
-		StructToZodSchema(AlphaNum{}))
-
-	type AlphaNumUnicode struct {
-		Name string `validate:"alphanumunicode"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const AlphaNumUnicodeSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type AlphaNumUnicode = z.infer<typeof AlphaNumUnicodeSchema>
-
-`, alphaUnicodeNumericRegexString),
-		StructToZodSchema(AlphaNumUnicode{}))
-
-	type AlphaUnicode struct {
-		Name string `validate:"alphaunicode"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const AlphaUnicodeSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type AlphaUnicode = z.infer<typeof AlphaUnicodeSchema>
-
-`, alphaUnicodeRegexString),
-		StructToZodSchema(AlphaUnicode{}))
-
-	type ASCII struct {
-		Name string `validate:"ascii"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const ASCIISchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type ASCII = z.infer<typeof ASCIISchema>
-
-`, aSCIIRegexString),
-		StructToZodSchema(ASCII{}))
-
-	type Boolean struct {
-		Name string `validate:"boolean"`
-	}
-	assert.Equal(t,
-		`export const BooleanSchema = z.object({
-  Name: z.enum(['true', 'false']),
-})
-export type Boolean = z.infer<typeof BooleanSchema>
-
-`,
-		StructToZodSchema(Boolean{}))
-
-	type Lowercase struct {
-		Name string `validate:"lowercase"`
-	}
-	assert.Equal(t,
-		`export const LowercaseSchema = z.object({
-  Name: z.string().refine((val) => val === val.toLowerCase()),
-})
-export type Lowercase = z.infer<typeof LowercaseSchema>
-
-`,
-		StructToZodSchema(Lowercase{}))
-
-	type Number struct {
-		Name string `validate:"number"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const NumberSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Number = z.infer<typeof NumberSchema>
-
-`, numberRegexString),
-		StructToZodSchema(Number{}))
-
-	type Numeric struct {
-		Name string `validate:"numeric"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const NumericSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Numeric = z.infer<typeof NumericSchema>
-
-`, numericRegexString),
-		StructToZodSchema(Numeric{}))
-
-	type Uppercase struct {
-		Name string `validate:"uppercase"`
-	}
-	assert.Equal(t,
-		`export const UppercaseSchema = z.object({
-  Name: z.string().refine((val) => val === val.toUpperCase()),
-})
-export type Uppercase = z.infer<typeof UppercaseSchema>
-
-`,
-		StructToZodSchema(Uppercase{}))
-
-	type Base64 struct {
-		Name string `validate:"base64"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const Base64Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Base64 = z.infer<typeof Base64Schema>
-
-`, base64RegexString),
-		StructToZodSchema(Base64{}, WithZodV3()))
-
-	type mongodb struct {
-		Name string `validate:"mongodb"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const mongodbSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type mongodb = z.infer<typeof mongodbSchema>
-
-`, mongodbRegexString),
-		StructToZodSchema(mongodb{}))
-
-	type datetime struct {
-		Name string `validate:"datetime"`
-	}
-	assert.Equal(t,
-		`export const datetimeSchema = z.object({
-  Name: z.string().datetime(),
-})
-export type datetime = z.infer<typeof datetimeSchema>
-
-`,
-		StructToZodSchema(datetime{}, WithZodV3()))
-
-	type Hexadecimal struct {
-		Name string `validate:"hexadecimal"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const HexadecimalSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Hexadecimal = z.infer<typeof HexadecimalSchema>
-
-`, hexadecimalRegexString),
-		StructToZodSchema(Hexadecimal{}, WithZodV3()))
-
-	type json struct {
-		Name string `validate:"json"`
-	}
-	assert.Equal(t,
-		`export const jsonSchema = z.object({
-  Name: z.string().refine((val) => { try { JSON.parse(val); return true } catch { return false } }),
-})
-export type json = z.infer<typeof jsonSchema>
-
-`,
-		StructToZodSchema(json{}))
-
-	type Latitude struct {
-		Name string `validate:"latitude"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const LatitudeSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Latitude = z.infer<typeof LatitudeSchema>
-
-`, latitudeRegexString),
-		StructToZodSchema(Latitude{}))
-
-	type Longitude struct {
-		Name string `validate:"longitude"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const LongitudeSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type Longitude = z.infer<typeof LongitudeSchema>
-
-`, longitudeRegexString),
-		StructToZodSchema(Longitude{}))
-
-	type UUID struct {
-		Name string `validate:"uuid"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUIDSchema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID = z.infer<typeof UUIDSchema>
-
-`, uUIDRegexString),
-		StructToZodSchema(UUID{}, WithZodV3()))
-
-	type UUID3 struct {
-		Name string `validate:"uuid3"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID3Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID3 = z.infer<typeof UUID3Schema>
-
-`, uUID3RegexString),
-		StructToZodSchema(UUID3{}, WithZodV3()))
-
-	type UUID3RFC4122 struct {
-		Name string `validate:"uuid3_rfc4122"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID3RFC4122Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID3RFC4122 = z.infer<typeof UUID3RFC4122Schema>
-
-`, uUID3RFC4122RegexString),
-		StructToZodSchema(UUID3RFC4122{}, WithZodV3()))
-
-	type UUID4 struct {
-		Name string `validate:"uuid4"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID4Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID4 = z.infer<typeof UUID4Schema>
-
-`, uUID4RegexString),
-		StructToZodSchema(UUID4{}, WithZodV3()))
-
-	type UUID4RFC4122 struct {
-		Name string `validate:"uuid4_rfc4122"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID4RFC4122Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID4RFC4122 = z.infer<typeof UUID4RFC4122Schema>
-
-`, uUID4RFC4122RegexString),
-		StructToZodSchema(UUID4RFC4122{}, WithZodV3()))
-
-	type UUID5 struct {
-		Name string `validate:"uuid5"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID5Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID5 = z.infer<typeof UUID5Schema>
-
-`, uUID5RegexString),
-		StructToZodSchema(UUID5{}, WithZodV3()))
-
-	type UUID5RFC4122 struct {
-		Name string `validate:"uuid5_rfc4122"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUID5RFC4122Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUID5RFC4122 = z.infer<typeof UUID5RFC4122Schema>
-
-`, uUID5RFC4122RegexString),
-		StructToZodSchema(UUID5RFC4122{}, WithZodV3()))
-
-	type UUIDRFC4122 struct {
-		Name string `validate:"uuid_rfc4122"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const UUIDRFC4122Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type UUIDRFC4122 = z.infer<typeof UUIDRFC4122Schema>
-
-`, uUIDRFC4122RegexString),
-		StructToZodSchema(UUIDRFC4122{}, WithZodV3()))
-
-	type MD4 struct {
-		Name string `validate:"md4"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const MD4Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type MD4 = z.infer<typeof MD4Schema>
-
-`, md4RegexString),
-		StructToZodSchema(MD4{}))
-
-	type MD5 struct {
-		Name string `validate:"md5"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const MD5Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type MD5 = z.infer<typeof MD5Schema>
-
-`, md5RegexString),
-		StructToZodSchema(MD5{}, WithZodV3()))
-
-	type SHA256 struct {
-		Name string `validate:"sha256"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const SHA256Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type SHA256 = z.infer<typeof SHA256Schema>
-
-`, sha256RegexString),
-		StructToZodSchema(SHA256{}, WithZodV3()))
-
-	type SHA384 struct {
-		Name string `validate:"sha384"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const SHA384Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type SHA384 = z.infer<typeof SHA384Schema>
-
-`, sha384RegexString),
-		StructToZodSchema(SHA384{}, WithZodV3()))
-
-	type SHA512 struct {
-		Name string `validate:"sha512"`
-	}
-	assert.Equal(t,
-		fmt.Sprintf(`export const SHA512Schema = z.object({
-  Name: z.string().regex(/%s/),
-})
-export type SHA512 = z.infer<typeof SHA512Schema>
-
-`, sha512RegexString),
-		StructToZodSchema(SHA512{}, WithZodV3()))
-
-	type Bad2 struct {
-		Name string `validate:"bad2"`
-	}
-	assert.Panics(t, func() {
-		StructToZodSchema(Bad2{})
+	t.Run("ne", func(t *testing.T) {
+		type Ne struct {
+			Name string `validate:"ne=hello"`
+		}
+		assertSchema(t, Ne{})
+	})
+
+	t.Run("oneof", func(t *testing.T) {
+		type OneOf struct {
+			Name string `validate:"oneof=hello world"`
+		}
+		assertSchema(t, OneOf{})
+	})
+
+	t.Run("oneof_separated", func(t *testing.T) {
+		type OneOfSeparated struct {
+			Name string `validate:"oneof='a b c' 'd e f'"`
+		}
+		assertSchema(t, OneOfSeparated{})
+	})
+
+	t.Run("len", func(t *testing.T) {
+		type Len struct {
+			Name string `validate:"len=5"`
+		}
+		assertSchema(t, Len{})
+	})
+
+	t.Run("min", func(t *testing.T) {
+		type Min struct {
+			Name string `validate:"min=5"`
+		}
+		assertSchema(t, Min{})
+	})
+
+	t.Run("max", func(t *testing.T) {
+		type Max struct {
+			Name string `validate:"max=5"`
+		}
+		assertSchema(t, Max{})
+	})
+
+	t.Run("minmax", func(t *testing.T) {
+		type MinMax struct {
+			Name string `validate:"min=3,max=7"`
+		}
+		assertSchema(t, MinMax{})
+	})
+
+	t.Run("gt", func(t *testing.T) {
+		type Gt struct {
+			Name string `validate:"gt=5"`
+		}
+		assertSchema(t, Gt{})
+	})
+
+	t.Run("gte", func(t *testing.T) {
+		type Gte struct {
+			Name string `validate:"gte=5"`
+		}
+		assertSchema(t, Gte{})
+	})
+
+	t.Run("lt", func(t *testing.T) {
+		type Lt struct {
+			Name string `validate:"lt=5"`
+		}
+		assertSchema(t, Lt{})
+	})
+
+	t.Run("lte", func(t *testing.T) {
+		type Lte struct {
+			Name string `validate:"lte=5"`
+		}
+		assertSchema(t, Lte{})
+	})
+
+	t.Run("contains", func(t *testing.T) {
+		type Contains struct {
+			Name string `validate:"contains=hello"`
+		}
+		assertSchema(t, Contains{})
+	})
+
+	t.Run("endswith", func(t *testing.T) {
+		type EndsWith struct {
+			Name string `validate:"endswith=hello"`
+		}
+		assertSchema(t, EndsWith{})
+	})
+
+	t.Run("startswith", func(t *testing.T) {
+		type StartsWith struct {
+			Name string `validate:"startswith=hello"`
+		}
+		assertSchema(t, StartsWith{})
+	})
+
+	t.Run("bad", func(t *testing.T) {
+		type Bad struct {
+			Name string `validate:"bad=hello"`
+		}
+		assert.Panics(t, func() {
+			StructToZodSchema(Bad{})
+		})
+	})
+
+	t.Run("required", func(t *testing.T) {
+		type Required struct {
+			Name string `validate:"required"`
+		}
+		assertSchema(t, Required{})
+	})
+
+	t.Run("email", func(t *testing.T) {
+		type Email struct {
+			Name string `validate:"email"`
+		}
+		assertSchema(t, Email{}, "v3", "v4")
+	})
+
+	t.Run("url", func(t *testing.T) {
+		type URL struct {
+			Name string `validate:"url"`
+		}
+		assertSchema(t, URL{}, "v3", "v4")
+	})
+
+	t.Run("ipv4", func(t *testing.T) {
+		type IPv4 struct {
+			Name string `validate:"ipv4"`
+		}
+		assertSchema(t, IPv4{}, "v3", "v4")
+	})
+
+	t.Run("ipv6", func(t *testing.T) {
+		type IPv6 struct {
+			Name string `validate:"ipv6"`
+		}
+		assertSchema(t, IPv6{}, "v3", "v4")
+	})
+
+	t.Run("ip4_addr", func(t *testing.T) {
+		type IP4Addr struct {
+			Name string `validate:"ip4_addr"`
+		}
+		assertSchema(t, IP4Addr{}, "v3", "v4")
+	})
+
+	t.Run("ip6_addr", func(t *testing.T) {
+		type IP6Addr struct {
+			Name string `validate:"ip6_addr"`
+		}
+		assertSchema(t, IP6Addr{}, "v3", "v4")
+	})
+
+	t.Run("ip", func(t *testing.T) {
+		type IP struct {
+			Name string `validate:"ip"`
+		}
+		assertSchema(t, IP{}, "v3", "v4")
+	})
+
+	t.Run("ip_addr", func(t *testing.T) {
+		type IPAddr struct {
+			Name string `validate:"ip_addr"`
+		}
+		assertSchema(t, IPAddr{}, "v3", "v4")
+	})
+
+	t.Run("http_url", func(t *testing.T) {
+		type HttpURL struct {
+			Name string `validate:"http_url"`
+		}
+		assertSchema(t, HttpURL{}, "v3", "v4")
+	})
+
+	t.Run("url_encoded", func(t *testing.T) {
+		type URLEncoded struct {
+			Name string `validate:"url_encoded"`
+		}
+		assertSchema(t, URLEncoded{})
+	})
+
+	t.Run("alpha", func(t *testing.T) {
+		type Alpha struct {
+			Name string `validate:"alpha"`
+		}
+		assertSchema(t, Alpha{})
+	})
+
+	t.Run("alphanum", func(t *testing.T) {
+		type AlphaNum struct {
+			Name string `validate:"alphanum"`
+		}
+		assertSchema(t, AlphaNum{})
+	})
+
+	t.Run("alphanumunicode", func(t *testing.T) {
+		type AlphaNumUnicode struct {
+			Name string `validate:"alphanumunicode"`
+		}
+		assertSchema(t, AlphaNumUnicode{})
+	})
+
+	t.Run("alphaunicode", func(t *testing.T) {
+		type AlphaUnicode struct {
+			Name string `validate:"alphaunicode"`
+		}
+		assertSchema(t, AlphaUnicode{})
+	})
+
+	t.Run("ascii", func(t *testing.T) {
+		type ASCII struct {
+			Name string `validate:"ascii"`
+		}
+		assertSchema(t, ASCII{})
+	})
+
+	t.Run("boolean", func(t *testing.T) {
+		type Boolean struct {
+			Name string `validate:"boolean"`
+		}
+		assertSchema(t, Boolean{})
+	})
+
+	t.Run("lowercase", func(t *testing.T) {
+		type Lowercase struct {
+			Name string `validate:"lowercase"`
+		}
+		assertSchema(t, Lowercase{})
+	})
+
+	t.Run("number", func(t *testing.T) {
+		type Number struct {
+			Name string `validate:"number"`
+		}
+		assertSchema(t, Number{})
+	})
+
+	t.Run("numeric", func(t *testing.T) {
+		type Numeric struct {
+			Name string `validate:"numeric"`
+		}
+		assertSchema(t, Numeric{})
+	})
+
+	t.Run("uppercase", func(t *testing.T) {
+		type Uppercase struct {
+			Name string `validate:"uppercase"`
+		}
+		assertSchema(t, Uppercase{})
+	})
+
+	t.Run("base64", func(t *testing.T) {
+		type Base64 struct {
+			Name string `validate:"base64"`
+		}
+		assertSchema(t, Base64{}, "v3", "v4")
+	})
+
+	t.Run("mongodb", func(t *testing.T) {
+		type mongodb struct {
+			Name string `validate:"mongodb"`
+		}
+		assertSchema(t, mongodb{})
+	})
+
+	t.Run("datetime", func(t *testing.T) {
+		type datetime struct {
+			Name string `validate:"datetime"`
+		}
+		assertSchema(t, datetime{}, "v3", "v4")
+	})
+
+	t.Run("hexadecimal", func(t *testing.T) {
+		type Hexadecimal struct {
+			Name string `validate:"hexadecimal"`
+		}
+		assertSchema(t, Hexadecimal{}, "v3", "v4")
+	})
+
+	t.Run("json", func(t *testing.T) {
+		type json struct {
+			Name string `validate:"json"`
+		}
+		assertSchema(t, json{})
+	})
+
+	t.Run("latitude", func(t *testing.T) {
+		type Latitude struct {
+			Name string `validate:"latitude"`
+		}
+		assertSchema(t, Latitude{})
+	})
+
+	t.Run("longitude", func(t *testing.T) {
+		type Longitude struct {
+			Name string `validate:"longitude"`
+		}
+		assertSchema(t, Longitude{})
+	})
+
+	t.Run("uuid", func(t *testing.T) {
+		type UUID struct {
+			Name string `validate:"uuid"`
+		}
+		assertSchema(t, UUID{}, "v3", "v4")
+	})
+
+	t.Run("uuid3", func(t *testing.T) {
+		type UUID3 struct {
+			Name string `validate:"uuid3"`
+		}
+		assertSchema(t, UUID3{}, "v3", "v4")
+	})
+
+	t.Run("uuid3_rfc4122", func(t *testing.T) {
+		type UUID3RFC4122 struct {
+			Name string `validate:"uuid3_rfc4122"`
+		}
+		assertSchema(t, UUID3RFC4122{}, "v3", "v4")
+	})
+
+	t.Run("uuid4", func(t *testing.T) {
+		type UUID4 struct {
+			Name string `validate:"uuid4"`
+		}
+		assertSchema(t, UUID4{}, "v3", "v4")
+	})
+
+	t.Run("uuid4_rfc4122", func(t *testing.T) {
+		type UUID4RFC4122 struct {
+			Name string `validate:"uuid4_rfc4122"`
+		}
+		assertSchema(t, UUID4RFC4122{}, "v3", "v4")
+	})
+
+	t.Run("uuid5", func(t *testing.T) {
+		type UUID5 struct {
+			Name string `validate:"uuid5"`
+		}
+		assertSchema(t, UUID5{}, "v3", "v4")
+	})
+
+	t.Run("uuid5_rfc4122", func(t *testing.T) {
+		type UUID5RFC4122 struct {
+			Name string `validate:"uuid5_rfc4122"`
+		}
+		assertSchema(t, UUID5RFC4122{}, "v3", "v4")
+	})
+
+	t.Run("uuid_rfc4122", func(t *testing.T) {
+		type UUIDRFC4122 struct {
+			Name string `validate:"uuid_rfc4122"`
+		}
+		assertSchema(t, UUIDRFC4122{}, "v3", "v4")
+	})
+
+	t.Run("md4", func(t *testing.T) {
+		type MD4 struct {
+			Name string `validate:"md4"`
+		}
+		assertSchema(t, MD4{})
+	})
+
+	t.Run("md5", func(t *testing.T) {
+		type MD5 struct {
+			Name string `validate:"md5"`
+		}
+		assertSchema(t, MD5{}, "v3", "v4")
+	})
+
+	t.Run("sha256", func(t *testing.T) {
+		type SHA256 struct {
+			Name string `validate:"sha256"`
+		}
+		assertSchema(t, SHA256{}, "v3", "v4")
+	})
+
+	t.Run("sha384", func(t *testing.T) {
+		type SHA384 struct {
+			Name string `validate:"sha384"`
+		}
+		assertSchema(t, SHA384{}, "v3", "v4")
+	})
+
+	t.Run("sha512", func(t *testing.T) {
+		type SHA512 struct {
+			Name string `validate:"sha512"`
+		}
+		assertSchema(t, SHA512{}, "v3", "v4")
+	})
+
+	t.Run("bad2", func(t *testing.T) {
+		type Bad2 struct {
+			Name string `validate:"bad2"`
+		}
+		assert.Panics(t, func() {
+			StructToZodSchema(Bad2{})
+		})
 	})
 }
 
@@ -1135,24 +710,7 @@ func TestZodV4Defaults(t *testing.T) {
 			Tags []string
 		}
 
-		assert.Equal(t, `export const HasIDSchema = z.object({
-  ID: z.string(),
-})
-export type HasID = z.infer<typeof HasIDSchema>
-
-export const HasNameSchema = z.object({
-  name: z.string(),
-})
-export type HasName = z.infer<typeof HasNameSchema>
-
-export const UserSchema = z.object({
-  Tags: z.string().array().nullable(),
-  ...HasIDSchema.shape,
-  ...HasNameSchema.shape,
-})
-export type User = z.infer<typeof UserSchema>
-
-`, StructToZodSchema(User{}))
+		assertSchema(t, User{}, "v4")
 	})
 
 	t.Run("string formats use zod v4 builders", func(t *testing.T) {
@@ -1164,16 +722,7 @@ export type User = z.infer<typeof UserSchema>
 			Checksum string `validate:"md5"`
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  Email: z.email(),
-  Link: z.httpUrl(),
-  Base64: z.base64(),
-  ID: z.uuid({ version: "v4" }),
-  Checksum: z.hash("md5"),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, StructToZodSchema(Payload{}))
+		assertSchema(t, Payload{}, "v4")
 	})
 
 	t.Run("string tag order is preserved around v4 format helpers", func(t *testing.T) {
@@ -1188,13 +737,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			},
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  TrimmedThenEmail: z.string().trim().email(),
-  EmailThenTrimmed: z.email().trim(),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{}))
+		golden.Assert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})))
 	})
 
 	t.Run("ip unions inherit generic string constraints", func(t *testing.T) {
@@ -1202,12 +745,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			Address string `validate:"ip,required,max=45"`
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  Address: z.union([z.ipv4().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)'), z.ipv6().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)')]),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, StructToZodSchema(Payload{}))
+		assertSchema(t, Payload{}, "v4")
 	})
 
 	t.Run("oneof takes precedence over ip specialization", func(t *testing.T) {
@@ -1215,12 +753,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			Address string `validate:"oneof='127.0.0.1' '::1',ip"`
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  Address: z.enum(["127.0.0.1", "::1"] as const),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, StructToZodSchema(Payload{}))
+		assertSchema(t, Payload{}, "v4")
 	})
 
 	t.Run("ip mixed with another format falls back to legacy chain semantics", func(t *testing.T) {
@@ -1228,12 +761,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			Address string `validate:"email,ip"`
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  Address: z.string().email().ip(),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, StructToZodSchema(Payload{}))
+		assertSchema(t, Payload{}, "v4")
 	})
 
 	t.Run("enum keyed maps become partial records", func(t *testing.T) {
@@ -1241,12 +769,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			Metadata map[string]string `validate:"dive,keys,oneof=draft published,endkeys"`
 		}
 
-		assert.Equal(t, `export const PayloadSchema = z.object({
-  Metadata: z.partialRecord(z.enum(["draft", "published"] as const), z.string()).nullable(),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-
-`, StructToZodSchema(Payload{}))
+		assertSchema(t, Payload{}, "v4")
 	})
 
 	t.Run("recursive embedded shapes preserve encounter order for duplicate keys", func(t *testing.T) {
@@ -1260,23 +783,7 @@ export type Payload = z.infer<typeof PayloadSchema>
 			Next *Node `json:"next"`
 		}
 
-		assert.Equal(t, `export const BaseSchema = z.object({
-  id: z.string(),
-})
-export type Base = z.infer<typeof BaseSchema>
-
-export type Node = Base & {
-  id: number,
-  next: Node | null,
-}
-const NodeSchemaShape = {
-  ...BaseSchema.shape,
-  id: z.number(),
-  next: z.lazy(() => NodeSchema).nullable(),
-}
-export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
-
-`, StructToZodSchema(Node{}))
+		assertSchema(t, Node{}, "v4")
 	})
 
 	t.Run("recursive embedded shapes keep named fields before spreads", func(t *testing.T) {
@@ -1291,111 +798,67 @@ export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
 			UpdatedAt time.Time
 		}
 
-		assert.Equal(t, `export type TreeNode = {
-  Value: string,
-  CreatedAt: Date,
-  Children: TreeNode[] | null,
-}
-const TreeNodeSchemaShape = {
-  Value: z.string(),
-  CreatedAt: z.coerce.date(),
-  Children: z.lazy(() => TreeNodeSchema).array().nullable(),
-}
-export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
-
-export const TreeSchema = z.object({
-  UpdatedAt: z.coerce.date(),
-  ...TreeNodeSchemaShape,
-})
-export type Tree = z.infer<typeof TreeSchema>
-
-`, StructToZodSchema(Tree{}))
+		assertSchema(t, Tree{}, "v4")
 	})
 }
 
 func TestNumberValidations(t *testing.T) {
-	type User1 struct {
-		Age int `validate:"gte=18,lte=60"`
-	}
-	assert.Equal(t,
-		`export const User1Schema = z.object({
-  Age: z.number().gte(18).lte(60),
-})
-export type User1 = z.infer<typeof User1Schema>
+	t.Run("gte_lte", func(t *testing.T) {
+		type User1 struct {
+			Age int `validate:"gte=18,lte=60"`
+		}
+		assertSchema(t, User1{})
+	})
 
-`, StructToZodSchema(User1{}))
+	t.Run("gt_lt", func(t *testing.T) {
+		type User2 struct {
+			Age int `validate:"gt=18,lt=60"`
+		}
+		assertSchema(t, User2{})
+	})
 
-	type User2 struct {
-		Age int `validate:"gt=18,lt=60"`
-	}
-	assert.Equal(t,
-		`export const User2Schema = z.object({
-  Age: z.number().gt(18).lt(60),
-})
-export type User2 = z.infer<typeof User2Schema>
+	t.Run("eq", func(t *testing.T) {
+		type User3 struct {
+			Age int `validate:"eq=18"`
+		}
+		assertSchema(t, User3{})
+	})
 
-`, StructToZodSchema(User2{}))
+	t.Run("ne", func(t *testing.T) {
+		type User4 struct {
+			Age int `validate:"ne=18"`
+		}
+		assertSchema(t, User4{})
+	})
 
-	type User3 struct {
-		Age int `validate:"eq=18"`
-	}
-	assert.Equal(t,
-		`export const User3Schema = z.object({
-  Age: z.number().refine((val) => val === 18),
-})
-export type User3 = z.infer<typeof User3Schema>
+	t.Run("oneof", func(t *testing.T) {
+		type User5 struct {
+			Age int `validate:"oneof=18 19 20"`
+		}
+		assertSchema(t, User5{})
+	})
 
-`, StructToZodSchema(User3{}))
+	t.Run("min_max", func(t *testing.T) {
+		type User6 struct {
+			Age int `validate:"min=18,max=60"`
+		}
+		assertSchema(t, User6{})
+	})
 
-	type User4 struct {
-		Age int `validate:"ne=18"`
-	}
-	assert.Equal(t,
-		`export const User4Schema = z.object({
-  Age: z.number().refine((val) => val !== 18),
-})
-export type User4 = z.infer<typeof User4Schema>
+	t.Run("len", func(t *testing.T) {
+		type User7 struct {
+			Age int `validate:"len=18"`
+		}
+		assertSchema(t, User7{})
+	})
 
-`, StructToZodSchema(User4{}))
-
-	type User5 struct {
-		Age int `validate:"oneof=18 19 20"`
-	}
-	assert.Equal(t,
-		`export const User5Schema = z.object({
-  Age: z.number().refine((val) => [18, 19, 20].includes(val)),
-})
-export type User5 = z.infer<typeof User5Schema>
-
-`, StructToZodSchema(User5{}))
-
-	type User6 struct {
-		Age int `validate:"min=18,max=60"`
-	}
-	assert.Equal(t,
-		`export const User6Schema = z.object({
-  Age: z.number().gte(18).lte(60),
-})
-export type User6 = z.infer<typeof User6Schema>
-
-`, StructToZodSchema(User6{}))
-
-	type User7 struct {
-		Age int `validate:"len=18"`
-	}
-	assert.Equal(t,
-		`export const User7Schema = z.object({
-  Age: z.number().refine((val) => val === 18),
-})
-export type User7 = z.infer<typeof User7Schema>
-
-`, StructToZodSchema(User7{}))
-
-	type User8 struct {
-		Age int `validate:"bad=18"`
-	}
-	assert.Panics(t, func() {
-		StructToZodSchema(User8{})
+	t.Run("bad", func(t *testing.T) {
+		type User8 struct {
+			Age int `validate:"bad=18"`
+		}
+		assert.Panics(t, func() {
+			StructToZodSchema(User8{})
+		})
 	})
 }
 
@@ -1404,15 +867,7 @@ func TestInterfaceAny(t *testing.T) {
 		Name     string
 		Metadata interface{}
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.any(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestInterfacePointerAny(t *testing.T) {
@@ -1420,15 +875,7 @@ func TestInterfacePointerAny(t *testing.T) {
 		Name     string
 		Metadata *interface{}
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.any(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestInterfaceEmptyAny(t *testing.T) {
@@ -1436,15 +883,7 @@ func TestInterfaceEmptyAny(t *testing.T) {
 		Name     string
 		Metadata interface{} `json:",omitempty"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.any(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestInterfacePointerEmptyAny(t *testing.T) {
@@ -1452,15 +891,7 @@ func TestInterfacePointerEmptyAny(t *testing.T) {
 		Name     string
 		Metadata *interface{} `json:",omitempty"`
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.any(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestMapStringToString(t *testing.T) {
@@ -1468,15 +899,7 @@ func TestMapStringToString(t *testing.T) {
 		Name     string
 		Metadata map[string]string
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.record(z.string(), z.string()).nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestMapStringToInterface(t *testing.T) {
@@ -1484,15 +907,7 @@ func TestMapStringToInterface(t *testing.T) {
 		Name     string
 		Metadata map[string]interface{}
 	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Metadata: z.record(z.string(), z.any()).nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestMapWithStruct(t *testing.T) {
@@ -1502,179 +917,114 @@ func TestMapWithStruct(t *testing.T) {
 	type User struct {
 		MapWithStruct map[string]PostWithMetaData
 	}
-	assert.Equal(t,
-		`export const PostWithMetaDataSchema = z.object({
-  Title: z.string(),
-})
-export type PostWithMetaData = z.infer<typeof PostWithMetaDataSchema>
-
-export const UserSchema = z.object({
-  MapWithStruct: z.record(z.string(), PostWithMetaDataSchema).nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`, StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestMapWithValidations(t *testing.T) {
-	type Required struct {
-		Map map[string]string `validate:"required"`
-	}
-	assert.Equal(t,
-		`export const RequiredSchema = z.object({
-  Map: z.record(z.string(), z.string()),
-})
-export type Required = z.infer<typeof RequiredSchema>
+	t.Run("required", func(t *testing.T) {
+		type Required struct {
+			Map map[string]string `validate:"required"`
+		}
+		assertSchema(t, Required{})
+	})
 
-`, StructToZodSchema(Required{}))
+	t.Run("min", func(t *testing.T) {
+		type Min struct {
+			Map map[string]string `validate:"min=1"`
+		}
+		assertSchema(t, Min{})
+	})
 
-	type Min struct {
-		Map map[string]string `validate:"min=1"`
-	}
-	assert.Equal(t,
-		`export const MinSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
-})
-export type Min = z.infer<typeof MinSchema>
+	t.Run("max", func(t *testing.T) {
+		type Max struct {
+			Map map[string]string `validate:"max=1"`
+		}
+		assertSchema(t, Max{})
+	})
 
-`, StructToZodSchema(Min{}))
+	t.Run("len", func(t *testing.T) {
+		type Len struct {
+			Map map[string]string `validate:"len=1"`
+		}
+		assertSchema(t, Len{})
+	})
 
-	type Max struct {
-		Map map[string]string `validate:"max=1"`
-	}
-	assert.Equal(t,
-		`export const MaxSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
-})
-export type Max = z.infer<typeof MaxSchema>
+	t.Run("minmax", func(t *testing.T) {
+		type MinMax struct {
+			Map map[string]string `validate:"min=1,max=2"`
+		}
+		assertSchema(t, MinMax{})
+	})
 
-`, StructToZodSchema(Max{}))
+	t.Run("eq", func(t *testing.T) {
+		type Eq struct {
+			Map map[string]string `validate:"eq=1"`
+		}
+		assertSchema(t, Eq{})
+	})
 
-	type Len struct {
-		Map map[string]string `validate:"len=1"`
-	}
-	assert.Equal(t,
-		`export const LenSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
-})
-export type Len = z.infer<typeof LenSchema>
+	t.Run("ne", func(t *testing.T) {
+		type Ne struct {
+			Map map[string]string `validate:"ne=1"`
+		}
+		assertSchema(t, Ne{})
+	})
 
-`, StructToZodSchema(Len{}))
+	t.Run("gt", func(t *testing.T) {
+		type Gt struct {
+			Map map[string]string `validate:"gt=1"`
+		}
+		assertSchema(t, Gt{})
+	})
 
-	type MinMax struct {
-		Map map[string]string `validate:"min=1,max=2"`
-	}
-	assert.Equal(t,
-		`export const MinMaxSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
-})
-export type MinMax = z.infer<typeof MinMaxSchema>
+	t.Run("gte", func(t *testing.T) {
+		type Gte struct {
+			Map map[string]string `validate:"gte=1"`
+		}
+		assertSchema(t, Gte{})
+	})
 
-`, StructToZodSchema(MinMax{}))
+	t.Run("lt", func(t *testing.T) {
+		type Lt struct {
+			Map map[string]string `validate:"lt=1"`
+		}
+		assertSchema(t, Lt{})
+	})
 
-	type Eq struct {
-		Map map[string]string `validate:"eq=1"`
-	}
-	assert.Equal(t,
-		`export const EqSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
-})
-export type Eq = z.infer<typeof EqSchema>
+	t.Run("lte", func(t *testing.T) {
+		type Lte struct {
+			Map map[string]string `validate:"lte=1"`
+		}
+		assertSchema(t, Lte{})
+	})
 
-`, StructToZodSchema(Eq{}))
+	t.Run("bad", func(t *testing.T) {
+		type Bad struct {
+			Map map[string]string `validate:"bad=1"`
+		}
+		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+	})
 
-	type Ne struct {
-		Map map[string]string `validate:"ne=1"`
-	}
-	assert.Equal(t,
-		`export const NeSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size'),
-})
-export type Ne = z.infer<typeof NeSchema>
+	t.Run("dive1", func(t *testing.T) {
+		type Dive1 struct {
+			Map map[string]string `validate:"dive,min=2"`
+		}
+		assertSchema(t, Dive1{})
+	})
 
-`, StructToZodSchema(Ne{}))
+	t.Run("dive2", func(t *testing.T) {
+		type Dive2 struct {
+			Map []map[string]string `validate:"required,dive,min=2,dive,min=3"`
+		}
+		assertSchema(t, Dive2{})
+	})
 
-	type Gt struct {
-		Map map[string]string `validate:"gt=1"`
-	}
-	assert.Equal(t,
-		`export const GtSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 1, 'Map too small'),
-})
-export type Gt = z.infer<typeof GtSchema>
-
-`, StructToZodSchema(Gt{}))
-
-	type Gte struct {
-		Map map[string]string `validate:"gte=1"`
-	}
-	assert.Equal(t,
-		`export const GteSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
-})
-export type Gte = z.infer<typeof GteSchema>
-
-`, StructToZodSchema(Gte{}))
-
-	type Lt struct {
-		Map map[string]string `validate:"lt=1"`
-	}
-	assert.Equal(t,
-		`export const LtSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large'),
-})
-export type Lt = z.infer<typeof LtSchema>
-
-`, StructToZodSchema(Lt{}))
-
-	type Lte struct {
-		Map map[string]string `validate:"lte=1"`
-	}
-	assert.Equal(t,
-		`export const LteSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
-})
-export type Lte = z.infer<typeof LteSchema>
-
-`, StructToZodSchema(Lte{}))
-
-	type Bad struct {
-		Map map[string]string `validate:"bad=1"`
-	}
-	assert.Panics(t, func() { StructToZodSchema(Bad{}) })
-
-	type Dive1 struct {
-		Map map[string]string `validate:"dive,min=2"`
-	}
-	assert.Equal(t,
-		`export const Dive1Schema = z.object({
-  Map: z.record(z.string(), z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)')).nullable(),
-})
-export type Dive1 = z.infer<typeof Dive1Schema>
-
-`, StructToZodSchema(Dive1{}))
-
-	type Dive2 struct {
-		Map []map[string]string `validate:"required,dive,min=2,dive,min=3"`
-	}
-	assert.Equal(t,
-		`export const Dive2Schema = z.object({
-  Map: z.record(z.string(), z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
-})
-export type Dive2 = z.infer<typeof Dive2Schema>
-
-`, StructToZodSchema(Dive2{}))
-
-	type Dive3 struct {
-		Map []map[string]string `validate:"required,dive,min=2,dive,keys,min=3,endkeys,max=4"`
-	}
-	assert.Equal(t,
-		`export const Dive3Schema = z.object({
-  Map: z.record(z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)'), z.string().refine((val) => [...val].length <= 4, 'String must contain at most 4 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
-})
-export type Dive3 = z.infer<typeof Dive3Schema>
-
-`, StructToZodSchema(Dive3{}))
+	t.Run("dive3", func(t *testing.T) {
+		type Dive3 struct {
+			Map []map[string]string `validate:"required,dive,min=2,dive,keys,min=3,endkeys,max=4"`
+		}
+		assertSchema(t, Dive3{})
+	})
 }
 
 func TestMapWithNonStringKey(t *testing.T) {
@@ -1683,42 +1033,27 @@ func TestMapWithNonStringKey(t *testing.T) {
 		Metadata map[int]string
 	}
 
-	assert.Equal(t,
-		`export const Map1Schema = z.object({
-  Name: z.string(),
-  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
-})
-export type Map1 = z.infer<typeof Map1Schema>
-
-`, StructToZodSchema(Map1{}))
-
 	type Map2 struct {
 		Name     string
 		Metadata map[time.Time]string
 	}
-
-	assert.Equal(t,
-		`export const Map2Schema = z.object({
-  Name: z.string(),
-  Metadata: z.record(z.coerce.date(), z.string()).nullable(),
-})
-export type Map2 = z.infer<typeof Map2Schema>
-
-`, StructToZodSchema(Map2{}))
 
 	type Map3 struct {
 		Name     string
 		Metadata map[float64]string
 	}
 
-	assert.Equal(t,
-		`export const Map3Schema = z.object({
-  Name: z.string(),
-  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
-})
-export type Map3 = z.infer<typeof Map3Schema>
+	t.Run("int_key", func(t *testing.T) {
+		assertSchema(t, Map1{})
+	})
 
-`, StructToZodSchema(Map3{}))
+	t.Run("time_key", func(t *testing.T) {
+		assertSchema(t, Map2{})
+	})
+
+	t.Run("float_key", func(t *testing.T) {
+		assertSchema(t, Map3{})
+	})
 }
 
 func TestGetValidateKeys(t *testing.T) {
@@ -1760,6 +1095,53 @@ func TestGetValidateCurrent(t *testing.T) {
 	assert.Equal(t, "min=2,max=3", getValidateCurrent("min=2,max=3,dive,min=2,dive,min=3,max=4"))
 }
 
+func TestStructTime(t *testing.T) {
+	type User struct {
+		Name string
+		When time.Time
+	}
+	assertSchema(t, User{})
+}
+
+func TestTimeWithRequired(t *testing.T) {
+	type User struct {
+		When time.Time `validate:"required"`
+	}
+	assertSchema(t, User{})
+}
+
+func TestDuration(t *testing.T) {
+	type User struct {
+		HowLong time.Duration
+	}
+	assertSchema(t, User{})
+}
+
+func TestCustom(t *testing.T) {
+	type Decimal struct {
+		Value    int
+		Exponent int
+	}
+
+	type User struct {
+		Name  string
+		Money Decimal
+	}
+
+	customTypes := map[string]CustomFn{
+		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
+			return "z.string()"
+		},
+	}
+
+	v3c := NewConverterWithOpts(WithCustomTypes(customTypes), WithZodV3())
+	v4c := NewConverterWithOpts(WithCustomTypes(customTypes))
+	v3out := v3c.Convert(User{})
+	v4out := v4c.Convert(User{})
+	assert.Equal(t, v3out, v4out)
+	golden.Assert(t, []byte(v4out))
+}
+
 func TestEverything(t *testing.T) {
 	// The order matters PostWithMetaData needs to be declared after post otherwise it will raise a
 	// `Block-scoped variable 'Post' used before its declaration.` typescript error.
@@ -1799,49 +1181,7 @@ func TestEverything(t *testing.T) {
 		MapWithStruct                 map[string]PostWithMetaData
 	}
 
-	assert.Equal(t,
-		`export const PostSchema = z.object({
-  Title: z.string(),
-})
-export type Post = z.infer<typeof PostSchema>
-
-export const PostWithMetaDataSchema = z.object({
-  Title: z.string(),
-  Post: PostSchema,
-})
-export type PostWithMetaData = z.infer<typeof PostWithMetaDataSchema>
-
-export const UserSchema = z.object({
-  Name: z.string(),
-  Nickname: z.string().nullable(),
-  Age: z.number(),
-  Height: z.number(),
-  OldPostWithMetaData: PostWithMetaDataSchema,
-  Tags: z.string().array().nullable(),
-  TagsOptional: z.string().array().optional(),
-  TagsOptionalNullable: z.string().array().optional().nullable(),
-  Favourites: z.object({
-    Name: z.string(),
-  }).array().nullable(),
-  Posts: PostSchema.array().nullable(),
-  Post: PostSchema,
-  PostOptional: PostSchema.optional(),
-  PostOptionalNullable: PostSchema.optional().nullable(),
-  Metadata: z.record(z.string(), z.string()).nullable(),
-  MetadataOptional: z.record(z.string(), z.string()).optional(),
-  MetadataOptionalNullable: z.record(z.string(), z.string()).optional().nullable(),
-  ExtendedProps: z.any(),
-  ExtendedPropsOptional: z.any(),
-  ExtendedPropsNullable: z.any(),
-  ExtendedPropsOptionalNullable: z.any(),
-  ExtendedPropsVeryIndirect: z.any(),
-  NewPostWithMetaData: PostWithMetaDataSchema,
-  VeryNewPost: PostSchema,
-  MapWithStruct: z.record(z.string(), PostWithMetaDataSchema).nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`, StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestEverythingWithValidations(t *testing.T) {
@@ -1883,74 +1223,23 @@ func TestEverythingWithValidations(t *testing.T) {
 		VeryNewPost                   Post
 		MapWithStruct                 map[string]PostWithMetaData
 	}
-	assert.Equal(t,
-		`export const PostSchema = z.object({
-  Title: z.string().min(1),
-})
-export type Post = z.infer<typeof PostSchema>
-
-export const PostWithMetaDataSchema = z.object({
-  Title: z.string().min(1),
-  Post: PostSchema,
-})
-export type PostWithMetaData = z.infer<typeof PostWithMetaDataSchema>
-
-export const UserSchema = z.object({
-  Name: z.string().min(1),
-  Nickname: z.string().nullable(),
-  Age: z.number().gte(18).refine((val) => val !== 0),
-  Height: z.number().gte(1.5).refine((val) => val !== 0),
-  OldPostWithMetaData: PostWithMetaDataSchema,
-  Tags: z.string().array().min(1),
-  TagsOptional: z.string().array().optional(),
-  TagsOptionalNullable: z.string().array().optional().nullable(),
-  Favourites: z.object({
-    Name: z.string().min(1),
-  }).array().nullable(),
-  Posts: PostSchema.array(),
-  Post: PostSchema,
-  PostOptional: PostSchema.optional(),
-  PostOptionalNullable: PostSchema.optional().nullable(),
-  Metadata: z.record(z.string(), z.string()).nullable(),
-  MetadataLength: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 10, 'Map too large'),
-  MetadataOptional: z.record(z.string(), z.string()).optional(),
-  MetadataOptionalNullable: z.record(z.string(), z.string()).optional().nullable(),
-  ExtendedProps: z.any(),
-  ExtendedPropsOptional: z.any(),
-  ExtendedPropsNullable: z.any(),
-  ExtendedPropsOptionalNullable: z.any(),
-  ExtendedPropsVeryIndirect: z.any(),
-  NewPostWithMetaData: PostWithMetaDataSchema,
-  VeryNewPost: PostSchema,
-  MapWithStruct: z.record(z.string(), PostWithMetaDataSchema).nullable(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`, StructToZodSchema(User{}))
+	assertSchema(t, User{})
 }
 
 func TestConvertArray(t *testing.T) {
-	type Array struct {
-		Arr [10]string
-	}
-	assert.Equal(t,
-		`export const ArraySchema = z.object({
-  Arr: z.string().array().length(10),
-})
-export type Array = z.infer<typeof ArraySchema>
+	t.Run("single", func(t *testing.T) {
+		type Array struct {
+			Arr [10]string
+		}
+		assertSchema(t, Array{})
+	})
 
-`, StructToZodSchema(Array{}))
-
-	type MultiArray struct {
-		Arr [10][20][30]string
-	}
-	assert.Equal(t,
-		`export const MultiArraySchema = z.object({
-  Arr: z.string().array().length(30).array().length(20).array().length(10),
-})
-export type MultiArray = z.infer<typeof MultiArraySchema>
-
-`, StructToZodSchema(MultiArray{}))
+	t.Run("multi", func(t *testing.T) {
+		type MultiArray struct {
+			Arr [10][20][30]string
+		}
+		assertSchema(t, MultiArray{})
+	})
 }
 
 func TestConvertSlice(t *testing.T) {
@@ -1967,231 +1256,113 @@ func TestConvertSlice(t *testing.T) {
 	type Whim struct {
 		Wham *Foo
 	}
-	c := NewConverterWithOpts()
+
 	types := []interface{}{
 		Zip{},
 		Whim{},
 	}
-	assert.Equal(t,
-		`export const FooSchema = z.object({
-  Bar: z.string(),
-  Baz: z.string(),
-  Quz: z.string(),
-})
-export type Foo = z.infer<typeof FooSchema>
 
-export const ZipSchema = z.object({
-  Zap: FooSchema.nullable(),
-})
-export type Zip = z.infer<typeof ZipSchema>
-
-export const WhimSchema = z.object({
-  Wham: FooSchema.nullable(),
-})
-export type Whim = z.infer<typeof WhimSchema>
-
-`, c.ConvertSlice(types))
+	v3c := NewConverterWithOpts(WithZodV3())
+	v4c := NewConverterWithOpts()
+	v3out := v3c.ConvertSlice(types)
+	v4out := v4c.ConvertSlice(types)
+	assert.Equal(t, v3out, v4out)
+	golden.Assert(t, []byte(v4out))
 }
 
 func TestConvertSliceWithValidations(t *testing.T) {
-	type Required struct {
-		Slice []string `validate:"required"`
-	}
-	assert.Equal(t,
-		`export const RequiredSchema = z.object({
-  Slice: z.string().array(),
-})
-export type Required = z.infer<typeof RequiredSchema>
-
-`, StructToZodSchema(Required{}))
-
-	type Min struct {
-		Slice []string `validate:"min=1"`
-	}
-	assert.Equal(t, `export const MinSchema = z.object({
-  Slice: z.string().array().min(1),
-})
-export type Min = z.infer<typeof MinSchema>
-
-`, StructToZodSchema(Min{}))
-
-	type Max struct {
-		Slice []string `validate:"max=1"`
-	}
-	assert.Equal(t, `export const MaxSchema = z.object({
-  Slice: z.string().array().max(1),
-})
-export type Max = z.infer<typeof MaxSchema>
-
-`, StructToZodSchema(Max{}))
-
-	type Len struct {
-		Slice []string `validate:"len=1"`
-	}
-	assert.Equal(t, `export const LenSchema = z.object({
-  Slice: z.string().array().length(1),
-})
-export type Len = z.infer<typeof LenSchema>
-
-`, StructToZodSchema(Len{}))
-
-	type Eq struct {
-		Slice []string `validate:"eq=1"`
-	}
-	assert.Equal(t, `export const EqSchema = z.object({
-  Slice: z.string().array().length(1),
-})
-export type Eq = z.infer<typeof EqSchema>
-
-`, StructToZodSchema(Eq{}))
-
-	type Gt struct {
-		Slice []string `validate:"gt=1"`
-	}
-	assert.Equal(t, `export const GtSchema = z.object({
-  Slice: z.string().array().min(2),
-})
-export type Gt = z.infer<typeof GtSchema>
-
-`, StructToZodSchema(Gt{}))
-
-	type Gte struct {
-		Slice []string `validate:"gte=1"`
-	}
-	assert.Equal(t, `export const GteSchema = z.object({
-  Slice: z.string().array().min(1),
-})
-export type Gte = z.infer<typeof GteSchema>
-
-`, StructToZodSchema(Gte{}))
-
-	type Lt struct {
-		Slice []string `validate:"lt=1"`
-	}
-	assert.Equal(t, `export const LtSchema = z.object({
-  Slice: z.string().array().max(0),
-})
-export type Lt = z.infer<typeof LtSchema>
-
-`, StructToZodSchema(Lt{}))
-
-	type Lte struct {
-		Slice []string `validate:"lte=1"`
-	}
-	assert.Equal(t, `export const LteSchema = z.object({
-  Slice: z.string().array().max(1),
-})
-export type Lte = z.infer<typeof LteSchema>
-
-`, StructToZodSchema(Lte{}))
-
-	type Ne struct {
-		Slice []string `validate:"ne=0"`
-	}
-	assert.Equal(t, `export const NeSchema = z.object({
-  Slice: z.string().array().refine((val) => val.length !== 0),
-})
-export type Ne = z.infer<typeof NeSchema>
-
-`, StructToZodSchema(Ne{}))
-
-	assert.Panics(t, func() {
-		type Bad struct {
-			Slice []string `validate:"oneof=a b c"`
+	t.Run("required", func(t *testing.T) {
+		type Required struct {
+			Slice []string `validate:"required"`
 		}
-		StructToZodSchema(Bad{})
+		assertSchema(t, Required{})
 	})
 
-	type Dive1 struct {
-		Slice [][]string `validate:"dive,required"`
-	}
-	assert.Equal(t, `export const Dive1Schema = z.object({
-  Slice: z.string().array().array().nullable(),
-})
-export type Dive1 = z.infer<typeof Dive1Schema>
-
-`, StructToZodSchema(Dive1{}))
-
-	type Dive2 struct {
-		Slice [][]string `validate:"required,dive,min=1"`
-	}
-	assert.Equal(t, `export const Dive2Schema = z.object({
-  Slice: z.string().array().min(1).array(),
-})
-export type Dive2 = z.infer<typeof Dive2Schema>
-
-`, StructToZodSchema(Dive2{}))
-}
-
-func TestStructTime(t *testing.T) {
-	type User struct {
-		Name string
-		When time.Time
-	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  When: z.coerce.date(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
-}
-
-func TestTimeWithRequired(t *testing.T) {
-	type User struct {
-		When time.Time `validate:"required"`
-	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  When: z.coerce.date().refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date'),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
-}
-
-func TestDuration(t *testing.T) {
-	type User struct {
-		HowLong time.Duration
-	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  HowLong: z.number(),
-})
-export type User = z.infer<typeof UserSchema>
-
-`,
-		StructToZodSchema(User{}))
-}
-
-func TestCustom(t *testing.T) {
-	c := NewConverter(map[string]CustomFn{
-		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
-			return "z.string()"
-		},
+	t.Run("min", func(t *testing.T) {
+		type Min struct {
+			Slice []string `validate:"min=1"`
+		}
+		assertSchema(t, Min{})
 	})
 
-	type Decimal struct {
-		Value    int
-		Exponent int
-	}
+	t.Run("max", func(t *testing.T) {
+		type Max struct {
+			Slice []string `validate:"max=1"`
+		}
+		assertSchema(t, Max{})
+	})
 
-	type User struct {
-		Name  string
-		Money Decimal
-	}
-	assert.Equal(t,
-		`export const UserSchema = z.object({
-  Name: z.string(),
-  Money: z.string(),
-})
-export type User = z.infer<typeof UserSchema>
+	t.Run("len", func(t *testing.T) {
+		type Len struct {
+			Slice []string `validate:"len=1"`
+		}
+		assertSchema(t, Len{})
+	})
 
-`,
-		c.Convert(User{}))
+	t.Run("eq", func(t *testing.T) {
+		type Eq struct {
+			Slice []string `validate:"eq=1"`
+		}
+		assertSchema(t, Eq{})
+	})
+
+	t.Run("gt", func(t *testing.T) {
+		type Gt struct {
+			Slice []string `validate:"gt=1"`
+		}
+		assertSchema(t, Gt{})
+	})
+
+	t.Run("gte", func(t *testing.T) {
+		type Gte struct {
+			Slice []string `validate:"gte=1"`
+		}
+		assertSchema(t, Gte{})
+	})
+
+	t.Run("lt", func(t *testing.T) {
+		type Lt struct {
+			Slice []string `validate:"lt=1"`
+		}
+		assertSchema(t, Lt{})
+	})
+
+	t.Run("lte", func(t *testing.T) {
+		type Lte struct {
+			Slice []string `validate:"lte=1"`
+		}
+		assertSchema(t, Lte{})
+	})
+
+	t.Run("ne", func(t *testing.T) {
+		type Ne struct {
+			Slice []string `validate:"ne=0"`
+		}
+		assertSchema(t, Ne{})
+	})
+
+	t.Run("bad_oneof", func(t *testing.T) {
+		assert.Panics(t, func() {
+			type Bad struct {
+				Slice []string `validate:"oneof=a b c"`
+			}
+			StructToZodSchema(Bad{})
+		})
+	})
+
+	t.Run("dive1", func(t *testing.T) {
+		type Dive1 struct {
+			Slice [][]string `validate:"dive,required"`
+		}
+		assertSchema(t, Dive1{})
+	})
+
+	t.Run("dive2", func(t *testing.T) {
+		type Dive2 struct {
+			Slice [][]string `validate:"required,dive,min=1"`
+		}
+		assertSchema(t, Dive2{})
+	})
 }
 
 func TestRecursive1(t *testing.T) {
@@ -2204,25 +1375,7 @@ func TestRecursive1(t *testing.T) {
 		Children  []*NestedItem `json:"children"`
 	}
 
-	assert.Equal(t, `export type NestedItem = {
-  id: number,
-  title: string,
-  pos: number,
-  parent_id: number,
-  project_id: number,
-  children: NestedItem[] | null,
-}
-const NestedItemSchemaShape = {
-  id: z.number(),
-  title: z.string(),
-  pos: z.number(),
-  parent_id: z.number(),
-  project_id: z.number(),
-  children: z.lazy(() => NestedItemSchema).array().nullable(),
-}
-export const NestedItemSchema: z.ZodType<NestedItem> = z.object(NestedItemSchemaShape)
-
-`, StructToZodSchema(NestedItem{}))
+	assertSchema(t, NestedItem{}, "v3", "v4")
 }
 
 func TestRecursive2(t *testing.T) {
@@ -2235,22 +1388,7 @@ func TestRecursive2(t *testing.T) {
 		Child *Node `json:"child"`
 	}
 
-	assert.Equal(t, `export type Node = {
-  value: number,
-  next: Node | null,
-}
-const NodeSchemaShape = {
-  value: z.number(),
-  next: z.lazy(() => NodeSchema).nullable(),
-}
-export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
-
-export const ParentSchema = z.object({
-  child: NodeSchema.nullable(),
-})
-export type Parent = z.infer<typeof ParentSchema>
-
-`, StructToZodSchema(Parent{}))
+	assertSchema(t, Parent{}, "v3", "v4")
 }
 
 type TestCyclicA struct {
@@ -2283,24 +1421,16 @@ func TestGenerics(t *testing.T) {
 	c.AddType(StringIntPair{})
 	c.AddType(GenericPair[int, bool]{})
 	c.AddType(PairMap[string, int, bool]{})
-	assert.Equal(t, `export const StringIntPairSchema = z.object({
-  First: z.string(),
-  Second: z.number(),
-})
-export type StringIntPair = z.infer<typeof StringIntPairSchema>
 
-export const GenericPairIntBoolSchema = z.object({
-  First: z.number(),
-  Second: z.boolean(),
-})
-export type GenericPairIntBool = z.infer<typeof GenericPairIntBoolSchema>
+	v3c := NewConverterWithOpts(WithZodV3())
+	v3c.AddType(StringIntPair{})
+	v3c.AddType(GenericPair[int, bool]{})
+	v3c.AddType(PairMap[string, int, bool]{})
 
-export const PairMapStringIntBoolSchema = z.object({
-  items: z.record(z.string(), GenericPairIntBoolSchema).nullable(),
-})
-export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
-
-`, c.Export())
+	v3out := v3c.Export()
+	v4out := c.Export()
+	assert.Equal(t, v3out, v4out)
+	golden.Assert(t, []byte(v4out))
 }
 
 func TestSliceFields(t *testing.T) {
@@ -2314,18 +1444,7 @@ func TestSliceFields(t *testing.T) {
 		JSONMinOmitEmpty []int `json:",omitempty" validate:"min=1,omitempty"`
 	}
 
-	assert.Equal(t, `export const TestSliceFieldsStructSchema = z.object({
-  NoValidate: z.number().array().nullable(),
-  Required: z.number().array(),
-  Min: z.number().array().min(1),
-  OmitEmpty: z.number().array().nullable(),
-  JSONOmitEmpty: z.number().array().optional(),
-  MinOmitEmpty: z.number().array().min(1).nullable(),
-  JSONMinOmitEmpty: z.number().array().min(1).optional(),
-})
-export type TestSliceFieldsStruct = z.infer<typeof TestSliceFieldsStructSchema>
-
-`, StructToZodSchema(TestSliceFieldsStruct{}))
+	assertSchema(t, TestSliceFieldsStruct{})
 }
 
 func TestCustomTag(t *testing.T) {
@@ -2359,22 +1478,12 @@ func TestCustomTag(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, `export const SortParamsSchema = z.object({
-  order: z.enum(["asc", "desc"] as const).optional(),
-  field: z.string().optional(),
-})
-export type SortParams = z.infer<typeof SortParamsSchema>
-
-export const RequestSchema = z.object({
-  PaginationParams: z.object({
-    start: z.number().gt(0).optional(),
-    end: z.number().gt(0).optional(),
-  }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
-  search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
-}).merge(SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}))
-export type Request = z.infer<typeof RequestSchema>
-
-`, NewConverterWithOpts(WithCustomTags(customTagHandlers), WithZodV3()).Convert(Request{}))
+	t.Run("v3", func(t *testing.T) {
+		golden.Assert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers), WithZodV3()).Convert(Request{})))
+	})
+	t.Run("v4", func(t *testing.T) {
+		golden.Assert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{})))
+	})
 }
 
 func TestRecursiveEmbeddedStruct(t *testing.T) {
@@ -2405,54 +1514,26 @@ func TestRecursiveEmbeddedStruct(t *testing.T) {
 		ItemE
 	}
 
-	c := NewConverterWithOpts(WithZodV3())
-	c.AddType(ItemA{})
-	c.AddType(ItemB{})
-	c.AddType(ItemC{})
-	c.AddType(ItemD{})
-	c.AddType(ItemE{})
-	c.AddType(ItemF{})
-
-	assert.Equal(t, `export type ItemA = {
-  Name: string,
-  Children: ItemA[] | null,
-}
-const ItemASchemaShape = {
-  Name: z.string(),
-  Children: z.lazy(() => ItemASchema).array().nullable(),
-}
-export const ItemASchema: z.ZodType<ItemA> = z.object(ItemASchemaShape)
-
-export const ItemBSchema = z.object({
-  ...ItemASchemaShape,
-})
-export type ItemB = z.infer<typeof ItemBSchema>
-
-export const ItemCSchema = z.object({
-}).merge(ItemBSchema)
-export type ItemC = z.infer<typeof ItemCSchema>
-
-export const ItemDSchema = z.object({
-  ItemA: ItemASchema,
-})
-export type ItemD = z.infer<typeof ItemDSchema>
-
-export type ItemE = ItemA & ItemD & {
-  Children: ItemE[] | null,
-}
-const ItemESchemaShape = {
-  ...ItemASchemaShape,
-  ...ItemDSchema.shape,
-  Children: z.lazy(() => ItemESchema).array().nullable(),
-}
-export const ItemESchema: z.ZodType<ItemE> = z.object(ItemESchemaShape)
-
-export const ItemFSchema = z.object({
-  ...ItemESchemaShape,
-})
-export type ItemF = z.infer<typeof ItemFSchema>
-
-`, c.Export())
+	t.Run("v3", func(t *testing.T) {
+		c := NewConverterWithOpts(WithZodV3())
+		c.AddType(ItemA{})
+		c.AddType(ItemB{})
+		c.AddType(ItemC{})
+		c.AddType(ItemD{})
+		c.AddType(ItemE{})
+		c.AddType(ItemF{})
+		golden.Assert(t, []byte(c.Export()))
+	})
+	t.Run("v4", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		c.AddType(ItemA{})
+		c.AddType(ItemB{})
+		c.AddType(ItemC{})
+		c.AddType(ItemD{})
+		c.AddType(ItemE{})
+		c.AddType(ItemF{})
+		golden.Assert(t, []byte(c.Export()))
+	})
 }
 
 func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
@@ -2468,25 +1549,7 @@ func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
 			UpdatedAt time.Time
 		}
 
-		assert.Equal(t, `export type TreeNode = {
-  Value: string,
-  CreatedAt: Date,
-  Children: TreeNode[] | null,
-}
-const TreeNodeSchemaShape = {
-  Value: z.string(),
-  CreatedAt: z.coerce.date(),
-  Children: z.lazy(() => TreeNodeSchema).array().nullable(),
-}
-export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
-
-export const TreeSchema = z.object({
-  ...TreeNodeSchemaShape,
-  UpdatedAt: z.coerce.date(),
-})
-export type Tree = z.infer<typeof TreeSchema>
-
-`, StructToZodSchema(Tree{}, WithZodV3()))
+		assertSchema(t, Tree{}, "v3", "v4")
 	})
 
 	t.Run("embedded struct with pointer to self and date", func(t *testing.T) {
@@ -2501,24 +1564,6 @@ export type Tree = z.infer<typeof TreeSchema>
 			Title string
 		}
 
-		assert.Equal(t, `export type Comment = {
-  Text: string,
-  Timestamp: Date,
-  Reply: Comment | null,
-}
-const CommentSchemaShape = {
-  Text: z.string(),
-  Timestamp: z.coerce.date(),
-  Reply: z.lazy(() => CommentSchema).nullable(),
-}
-export const CommentSchema: z.ZodType<Comment> = z.object(CommentSchemaShape)
-
-export const ArticleSchema = z.object({
-  ...CommentSchemaShape,
-  Title: z.string(),
-})
-export type Article = z.infer<typeof ArticleSchema>
-
-`, StructToZodSchema(Article{}, WithZodV3()))
+		assertSchema(t, Article{}, "v3", "v4")
 	})
 }
