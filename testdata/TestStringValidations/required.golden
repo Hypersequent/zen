@@ -1,6 +1,0 @@
-// @typecheck
-export const RequiredSchema = z.object({
-  Name: z.string().min(1),
-})
-export type Required = z.infer<typeof RequiredSchema>
-

@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const URLSchema = z.object({
-  Name: z.string().url(),
-})
-export type URL = z.infer<typeof URLSchema>
-

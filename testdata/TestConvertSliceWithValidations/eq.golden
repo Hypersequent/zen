@@ -1,6 +1,0 @@
-// @typecheck
-export const EqSchema = z.object({
-  Slice: z.string().array().length(1),
-})
-export type Eq = z.infer<typeof EqSchema>
-

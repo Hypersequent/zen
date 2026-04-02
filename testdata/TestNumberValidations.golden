@@ -1,0 +1,36 @@
+// @typecheck
+export const gte_lteSchema = z.object({
+  value: z.number().gte(18).lte(60),
+})
+export type gte_lte = z.infer<typeof gte_lteSchema>
+
+export const gt_ltSchema = z.object({
+  value: z.number().gt(18).lt(60),
+})
+export type gt_lt = z.infer<typeof gt_ltSchema>
+
+export const eqSchema = z.object({
+  value: z.number().refine((val) => val === 18),
+})
+export type eq = z.infer<typeof eqSchema>
+
+export const neSchema = z.object({
+  value: z.number().refine((val) => val !== 18),
+})
+export type ne = z.infer<typeof neSchema>
+
+export const oneofSchema = z.object({
+  value: z.number().refine((val) => [18, 19, 20].includes(val)),
+})
+export type oneof = z.infer<typeof oneofSchema>
+
+export const min_maxSchema = z.object({
+  value: z.number().gte(18).lte(60),
+})
+export type min_max = z.infer<typeof min_maxSchema>
+
+export const lenSchema = z.object({
+  value: z.number().refine((val) => val === 18),
+})
+export type len = z.infer<typeof lenSchema>
+

@@ -1,0 +1,7 @@
+// @zod-version: v4
+// @typecheck
+export const PayloadSchema = z.object({
+  email: z.email().nullable(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

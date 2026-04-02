@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const SHA384Schema = z.object({
-  Name: z.string().regex(/^[0-9a-f]{96}$/),
-})
-export type SHA384 = z.infer<typeof SHA384Schema>
-

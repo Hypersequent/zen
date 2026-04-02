@@ -1,0 +1,12 @@
+// @zod-version: v4
+// @typecheck
+export const ipSchema = z.object({
+  value: z.union([z.ipv4(), z.ipv6()]),
+})
+export type ip = z.infer<typeof ipSchema>
+
+export const ip_addrSchema = z.object({
+  value: z.union([z.ipv4(), z.ipv6()]),
+})
+export type ip_addr = z.infer<typeof ip_addrSchema>
+

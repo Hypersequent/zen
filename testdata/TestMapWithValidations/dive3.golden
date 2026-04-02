@@ -1,6 +1,0 @@
-// @typecheck
-export const Dive3Schema = z.object({
-  Map: z.record(z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)'), z.string().refine((val) => [...val].length <= 4, 'String must contain at most 4 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
-})
-export type Dive3 = z.infer<typeof Dive3Schema>
-

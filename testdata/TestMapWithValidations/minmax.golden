@@ -1,6 +1,0 @@
-// @typecheck
-export const MinMaxSchema = z.object({
-  Map: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
-})
-export type MinMax = z.infer<typeof MinMaxSchema>
-

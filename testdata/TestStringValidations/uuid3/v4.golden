@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const UUID3Schema = z.object({
-  Name: z.uuid({ version: "v3" }),
-})
-export type UUID3 = z.infer<typeof UUID3Schema>
-

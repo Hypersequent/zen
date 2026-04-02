@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const MD5Schema = z.object({
-  Name: z.hash("md5"),
-})
-export type MD5 = z.infer<typeof MD5Schema>
-

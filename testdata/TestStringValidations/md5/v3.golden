@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const MD5Schema = z.object({
-  Name: z.string().regex(/^[0-9a-f]{32}$/),
-})
-export type MD5 = z.infer<typeof MD5Schema>
-

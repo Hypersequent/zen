@@ -1,6 +1,0 @@
-// @typecheck
-export const UppercaseSchema = z.object({
-  Name: z.string().refine((val) => val === val.toUpperCase()),
-})
-export type Uppercase = z.infer<typeof UppercaseSchema>
-

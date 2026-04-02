@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const IPv6Schema = z.object({
-  Name: z.ipv6(),
-})
-export type IPv6 = z.infer<typeof IPv6Schema>
-

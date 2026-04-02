@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const PayloadSchema = z.object({
-  Address: z.string().min(1).ip(),
-})
-export type Payload = z.infer<typeof PayloadSchema>
-

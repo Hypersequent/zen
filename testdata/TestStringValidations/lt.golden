@@ -1,6 +1,0 @@
-// @typecheck
-export const LtSchema = z.object({
-  Name: z.string().refine((val) => [...val].length < 5, 'String must contain at most 4 character(s)'),
-})
-export type Lt = z.infer<typeof LtSchema>
-

@@ -1,0 +1,51 @@
+// @typecheck
+export const requiredSchema = z.object({
+  value: z.string().array(),
+})
+export type required = z.infer<typeof requiredSchema>
+
+export const minSchema = z.object({
+  value: z.string().array().min(1),
+})
+export type min = z.infer<typeof minSchema>
+
+export const maxSchema = z.object({
+  value: z.string().array().max(1),
+})
+export type max = z.infer<typeof maxSchema>
+
+export const lenSchema = z.object({
+  value: z.string().array().length(1),
+})
+export type len = z.infer<typeof lenSchema>
+
+export const eqSchema = z.object({
+  value: z.string().array().length(1),
+})
+export type eq = z.infer<typeof eqSchema>
+
+export const gtSchema = z.object({
+  value: z.string().array().min(2),
+})
+export type gt = z.infer<typeof gtSchema>
+
+export const gteSchema = z.object({
+  value: z.string().array().min(1),
+})
+export type gte = z.infer<typeof gteSchema>
+
+export const ltSchema = z.object({
+  value: z.string().array().max(0),
+})
+export type lt = z.infer<typeof ltSchema>
+
+export const lteSchema = z.object({
+  value: z.string().array().max(1),
+})
+export type lte = z.infer<typeof lteSchema>
+
+export const neSchema = z.object({
+  value: z.string().array().refine((val) => val.length !== 0),
+})
+export type ne = z.infer<typeof neSchema>
+

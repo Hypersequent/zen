@@ -1,6 +1,0 @@
-// @typecheck
-export const NeSchema = z.object({
-  Slice: z.string().array().refine((val) => val.length !== 0),
-})
-export type Ne = z.infer<typeof NeSchema>
-

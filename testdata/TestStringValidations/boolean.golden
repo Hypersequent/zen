@@ -1,6 +1,0 @@
-// @typecheck
-export const BooleanSchema = z.object({
-  Name: z.enum(['true', 'false']),
-})
-export type Boolean = z.infer<typeof BooleanSchema>
-

@@ -1,7 +1,7 @@
 // @zod-version: v4
 // @typecheck
 export const PayloadSchema = z.object({
-  Address: z.union([z.ipv4().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)'), z.ipv6().min(1).refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)')]),
+  Address: z.union([z.ipv4().refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)'), z.ipv6().refine((val) => [...val].length <= 45, 'String must contain at most 45 character(s)')]),
 })
 export type Payload = z.infer<typeof PayloadSchema>
 

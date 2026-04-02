@@ -85,6 +85,47 @@ func assertSchema(t *testing.T, schema any, versions ...string) {
 	}
 }
 
+// buildValidatorConverter creates a converter with dynamically-built single-field structs.
+// Each entry maps a name to a validate tag. The field type is determined by fieldType.
+func buildValidatorConverter(fieldType reflect.Type, validators []struct{ name, tag string }, opts ...Opt) *Converter {
+	c := NewConverterWithOpts(opts...)
+	for _, v := range validators {
+		field := reflect.StructField{
+			Name: "Value",
+			Type: fieldType,
+			Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s" json:"value"`, v.tag)),
+		}
+		st := reflect.StructOf([]reflect.StructField{field})
+		c.AddTypeWithName(reflect.New(st).Elem().Interface(), v.name)
+	}
+	return c
+}
+
+// assertValidators golden-tests a list of validators.
+// With no versions: asserts v3==v4, writes one golden file.
+// With versions specified: writes separate golden files per version.
+func assertValidators(t *testing.T, fieldType reflect.Type, validators []struct{ name, tag string }, versions ...string) {
+	t.Helper()
+	switch len(versions) {
+	case 0:
+		v3 := buildValidatorConverter(fieldType, validators, WithZodV3())
+		v4 := buildValidatorConverter(fieldType, validators)
+		assert.Equal(t, v3.Export(), v4.Export())
+		goldenAssert(t, []byte(v4.Export()))
+	default:
+		for _, ver := range versions {
+			t.Run(ver, func(t *testing.T) {
+				var opts []Opt
+				if ver == "v3" {
+					opts = append(opts, WithZodV3())
+				}
+				c := buildValidatorConverter(fieldType, validators, opts...)
+				goldenAssert(t, []byte(c.Export()), withGoldenZodVersion(ver))
+			})
+		}
+	}
+}
+
 func TestFieldName(t *testing.T) {
 	assert.Equal(t,
 		fieldName(reflect.StructField{Name: "RCONPassword"}),
@@ -322,414 +363,53 @@ func TestNullableWithValidations(t *testing.T) {
 }
 
 func TestStringValidations(t *testing.T) {
-	t.Run("eq", func(t *testing.T) {
-		type Eq struct {
-			Name string `validate:"eq=hello"`
-		}
-		assertSchema(t, Eq{})
+	assertValidators(t, reflect.TypeOf(""), []struct{ name, tag string }{
+		{"eq", "eq=hello"},
+		{"ne", "ne=hello"},
+		{"oneof", "oneof=hello world"},
+		{"oneof_separated", "oneof='a b c' 'd e f'"},
+		{"len", "len=5"},
+		{"min", "min=5"},
+		{"max", "max=5"},
+		{"minmax", "min=3,max=7"},
+		{"gt", "gt=5"},
+		{"gte", "gte=5"},
+		{"lt", "lt=5"},
+		{"lte", "lte=5"},
+		{"contains", "contains=hello"},
+		{"endswith", "endswith=hello"},
+		{"startswith", "startswith=hello"},
+		{"required", "required"},
+		{"url_encoded", "url_encoded"},
+		{"alpha", "alpha"},
+		{"alphanum", "alphanum"},
+		{"alphanumunicode", "alphanumunicode"},
+		{"alphaunicode", "alphaunicode"},
+		{"ascii", "ascii"},
+		{"boolean", "boolean"},
+		{"lowercase", "lowercase"},
+		{"number", "number"},
+		{"numeric", "numeric"},
+		{"uppercase", "uppercase"},
+		{"mongodb", "mongodb"},
+		{"json_validator", "json"},
+		{"latitude", "latitude"},
+		{"longitude", "longitude"},
+		{"md4", "md4"},
 	})
 
-	t.Run("ne", func(t *testing.T) {
-		type Ne struct {
-			Name string `validate:"ne=hello"`
-		}
-		assertSchema(t, Ne{})
-	})
-
-	t.Run("oneof", func(t *testing.T) {
-		type OneOf struct {
-			Name string `validate:"oneof=hello world"`
-		}
-		assertSchema(t, OneOf{})
-	})
-
-	t.Run("oneof_separated", func(t *testing.T) {
-		type OneOfSeparated struct {
-			Name string `validate:"oneof='a b c' 'd e f'"`
-		}
-		assertSchema(t, OneOfSeparated{})
-	})
-
-	t.Run("len", func(t *testing.T) {
-		type Len struct {
-			Name string `validate:"len=5"`
-		}
-		assertSchema(t, Len{})
-	})
-
-	t.Run("min", func(t *testing.T) {
-		type Min struct {
-			Name string `validate:"min=5"`
-		}
-		assertSchema(t, Min{})
-	})
-
-	t.Run("max", func(t *testing.T) {
-		type Max struct {
-			Name string `validate:"max=5"`
-		}
-		assertSchema(t, Max{})
-	})
-
-	t.Run("minmax", func(t *testing.T) {
-		type MinMax struct {
-			Name string `validate:"min=3,max=7"`
-		}
-		assertSchema(t, MinMax{})
-	})
-
-	t.Run("gt", func(t *testing.T) {
-		type Gt struct {
-			Name string `validate:"gt=5"`
-		}
-		assertSchema(t, Gt{})
-	})
-
-	t.Run("gte", func(t *testing.T) {
-		type Gte struct {
-			Name string `validate:"gte=5"`
-		}
-		assertSchema(t, Gte{})
-	})
-
-	t.Run("lt", func(t *testing.T) {
-		type Lt struct {
-			Name string `validate:"lt=5"`
-		}
-		assertSchema(t, Lt{})
-	})
-
-	t.Run("lte", func(t *testing.T) {
-		type Lte struct {
-			Name string `validate:"lte=5"`
-		}
-		assertSchema(t, Lte{})
-	})
-
-	t.Run("contains", func(t *testing.T) {
-		type Contains struct {
-			Name string `validate:"contains=hello"`
-		}
-		assertSchema(t, Contains{})
-	})
-
-	t.Run("endswith", func(t *testing.T) {
-		type EndsWith struct {
-			Name string `validate:"endswith=hello"`
-		}
-		assertSchema(t, EndsWith{})
-	})
-
-	t.Run("startswith", func(t *testing.T) {
-		type StartsWith struct {
-			Name string `validate:"startswith=hello"`
-		}
-		assertSchema(t, StartsWith{})
-	})
-
-	t.Run("bad", func(t *testing.T) {
+	t.Run("bad tag panics", func(t *testing.T) {
 		type Bad struct {
 			Name string `validate:"bad=hello"`
 		}
-		assert.Panics(t, func() {
-			StructToZodSchema(Bad{})
-		})
+		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 	})
 
-	t.Run("required", func(t *testing.T) {
-		type Required struct {
-			Name string `validate:"required"`
-		}
-		assertSchema(t, Required{})
-	})
-
-	t.Run("email", func(t *testing.T) {
-		type Email struct {
-			Name string `validate:"email"`
-		}
-		assertSchema(t, Email{}, "v3", "v4")
-	})
-
-	t.Run("url", func(t *testing.T) {
-		type URL struct {
-			Name string `validate:"url"`
-		}
-		assertSchema(t, URL{}, "v3", "v4")
-	})
-
-	t.Run("ipv4", func(t *testing.T) {
-		type IPv4 struct {
-			Name string `validate:"ipv4"`
-		}
-		assertSchema(t, IPv4{}, "v3", "v4")
-	})
-
-	t.Run("ipv6", func(t *testing.T) {
-		type IPv6 struct {
-			Name string `validate:"ipv6"`
-		}
-		assertSchema(t, IPv6{}, "v3", "v4")
-	})
-
-	t.Run("ip4_addr", func(t *testing.T) {
-		type IP4Addr struct {
-			Name string `validate:"ip4_addr"`
-		}
-		assertSchema(t, IP4Addr{}, "v3", "v4")
-	})
-
-	t.Run("ip6_addr", func(t *testing.T) {
-		type IP6Addr struct {
-			Name string `validate:"ip6_addr"`
-		}
-		assertSchema(t, IP6Addr{}, "v3", "v4")
-	})
-
-	t.Run("ip", func(t *testing.T) {
-		type IP struct {
-			Name string `validate:"ip"`
-		}
-		assertSchema(t, IP{}, "v3", "v4")
-	})
-
-	t.Run("ip_addr", func(t *testing.T) {
-		type IPAddr struct {
-			Name string `validate:"ip_addr"`
-		}
-		assertSchema(t, IPAddr{}, "v3", "v4")
-	})
-
-	t.Run("http_url", func(t *testing.T) {
-		type HttpURL struct {
-			Name string `validate:"http_url"`
-		}
-		assertSchema(t, HttpURL{}, "v3", "v4")
-	})
-
-	t.Run("url_encoded", func(t *testing.T) {
-		type URLEncoded struct {
-			Name string `validate:"url_encoded"`
-		}
-		assertSchema(t, URLEncoded{})
-	})
-
-	t.Run("alpha", func(t *testing.T) {
-		type Alpha struct {
-			Name string `validate:"alpha"`
-		}
-		assertSchema(t, Alpha{})
-	})
-
-	t.Run("alphanum", func(t *testing.T) {
-		type AlphaNum struct {
-			Name string `validate:"alphanum"`
-		}
-		assertSchema(t, AlphaNum{})
-	})
-
-	t.Run("alphanumunicode", func(t *testing.T) {
-		type AlphaNumUnicode struct {
-			Name string `validate:"alphanumunicode"`
-		}
-		assertSchema(t, AlphaNumUnicode{})
-	})
-
-	t.Run("alphaunicode", func(t *testing.T) {
-		type AlphaUnicode struct {
-			Name string `validate:"alphaunicode"`
-		}
-		assertSchema(t, AlphaUnicode{})
-	})
-
-	t.Run("ascii", func(t *testing.T) {
-		type ASCII struct {
-			Name string `validate:"ascii"`
-		}
-		assertSchema(t, ASCII{})
-	})
-
-	t.Run("boolean", func(t *testing.T) {
-		type Boolean struct {
-			Name string `validate:"boolean"`
-		}
-		assertSchema(t, Boolean{})
-	})
-
-	t.Run("lowercase", func(t *testing.T) {
-		type Lowercase struct {
-			Name string `validate:"lowercase"`
-		}
-		assertSchema(t, Lowercase{})
-	})
-
-	t.Run("number", func(t *testing.T) {
-		type Number struct {
-			Name string `validate:"number"`
-		}
-		assertSchema(t, Number{})
-	})
-
-	t.Run("numeric", func(t *testing.T) {
-		type Numeric struct {
-			Name string `validate:"numeric"`
-		}
-		assertSchema(t, Numeric{})
-	})
-
-	t.Run("uppercase", func(t *testing.T) {
-		type Uppercase struct {
-			Name string `validate:"uppercase"`
-		}
-		assertSchema(t, Uppercase{})
-	})
-
-	t.Run("base64", func(t *testing.T) {
-		type Base64 struct {
-			Name string `validate:"base64"`
-		}
-		assertSchema(t, Base64{}, "v3", "v4")
-	})
-
-	t.Run("mongodb", func(t *testing.T) {
-		type mongodb struct {
-			Name string `validate:"mongodb"`
-		}
-		assertSchema(t, mongodb{})
-	})
-
-	t.Run("datetime", func(t *testing.T) {
-		type datetime struct {
-			Name string `validate:"datetime"`
-		}
-		assertSchema(t, datetime{}, "v3", "v4")
-	})
-
-	t.Run("hexadecimal", func(t *testing.T) {
-		type Hexadecimal struct {
-			Name string `validate:"hexadecimal"`
-		}
-		assertSchema(t, Hexadecimal{}, "v3", "v4")
-	})
-
-	t.Run("json", func(t *testing.T) {
-		type json struct {
-			Name string `validate:"json"`
-		}
-		assertSchema(t, json{})
-	})
-
-	t.Run("latitude", func(t *testing.T) {
-		type Latitude struct {
-			Name string `validate:"latitude"`
-		}
-		assertSchema(t, Latitude{})
-	})
-
-	t.Run("longitude", func(t *testing.T) {
-		type Longitude struct {
-			Name string `validate:"longitude"`
-		}
-		assertSchema(t, Longitude{})
-	})
-
-	t.Run("uuid", func(t *testing.T) {
-		type UUID struct {
-			Name string `validate:"uuid"`
-		}
-		assertSchema(t, UUID{}, "v3", "v4")
-	})
-
-	t.Run("uuid3", func(t *testing.T) {
-		type UUID3 struct {
-			Name string `validate:"uuid3"`
-		}
-		assertSchema(t, UUID3{}, "v3", "v4")
-	})
-
-	t.Run("uuid3_rfc4122", func(t *testing.T) {
-		type UUID3RFC4122 struct {
-			Name string `validate:"uuid3_rfc4122"`
-		}
-		assertSchema(t, UUID3RFC4122{}, "v3", "v4")
-	})
-
-	t.Run("uuid4", func(t *testing.T) {
-		type UUID4 struct {
-			Name string `validate:"uuid4"`
-		}
-		assertSchema(t, UUID4{}, "v3", "v4")
-	})
-
-	t.Run("uuid4_rfc4122", func(t *testing.T) {
-		type UUID4RFC4122 struct {
-			Name string `validate:"uuid4_rfc4122"`
-		}
-		assertSchema(t, UUID4RFC4122{}, "v3", "v4")
-	})
-
-	t.Run("uuid5", func(t *testing.T) {
-		type UUID5 struct {
-			Name string `validate:"uuid5"`
-		}
-		assertSchema(t, UUID5{}, "v3", "v4")
-	})
-
-	t.Run("uuid5_rfc4122", func(t *testing.T) {
-		type UUID5RFC4122 struct {
-			Name string `validate:"uuid5_rfc4122"`
-		}
-		assertSchema(t, UUID5RFC4122{}, "v3", "v4")
-	})
-
-	t.Run("uuid_rfc4122", func(t *testing.T) {
-		type UUIDRFC4122 struct {
-			Name string `validate:"uuid_rfc4122"`
-		}
-		assertSchema(t, UUIDRFC4122{}, "v3", "v4")
-	})
-
-	t.Run("md4", func(t *testing.T) {
-		type MD4 struct {
-			Name string `validate:"md4"`
-		}
-		assertSchema(t, MD4{})
-	})
-
-	t.Run("md5", func(t *testing.T) {
-		type MD5 struct {
-			Name string `validate:"md5"`
-		}
-		assertSchema(t, MD5{}, "v3", "v4")
-	})
-
-	t.Run("sha256", func(t *testing.T) {
-		type SHA256 struct {
-			Name string `validate:"sha256"`
-		}
-		assertSchema(t, SHA256{}, "v3", "v4")
-	})
-
-	t.Run("sha384", func(t *testing.T) {
-		type SHA384 struct {
-			Name string `validate:"sha384"`
-		}
-		assertSchema(t, SHA384{}, "v3", "v4")
-	})
-
-	t.Run("sha512", func(t *testing.T) {
-		type SHA512 struct {
-			Name string `validate:"sha512"`
-		}
-		assertSchema(t, SHA512{}, "v3", "v4")
-	})
-
-	t.Run("bad2", func(t *testing.T) {
+	t.Run("unknown tag panics", func(t *testing.T) {
 		type Bad2 struct {
 			Name string `validate:"bad2"`
 		}
-		assert.Panics(t, func() {
-			StructToZodSchema(Bad2{})
-		})
+		assert.Panics(t, func() { StructToZodSchema(Bad2{}) })
 	})
 }
 
@@ -785,14 +465,6 @@ func TestZodV4Defaults(t *testing.T) {
 		assertSchema(t, Payload{}, "v4")
 	})
 
-	t.Run("ip unions work when chain constraints precede ip tag", func(t *testing.T) {
-		type Payload struct {
-			Address string `validate:"required,ip"`
-		}
-
-		assertSchema(t, Payload{}, "v3", "v4")
-	})
-
 	t.Run("oneof takes precedence over ip specialization", func(t *testing.T) {
 		type Payload struct {
 			Address string `validate:"oneof='127.0.0.1' '::1',ip"`
@@ -801,12 +473,28 @@ func TestZodV4Defaults(t *testing.T) {
 		assertSchema(t, Payload{}, "v4")
 	})
 
-	t.Run("ip mixed with another format falls back to legacy chain semantics", func(t *testing.T) {
+	t.Run("format combined with union panics", func(t *testing.T) {
 		type Payload struct {
 			Address string `validate:"email,ip"`
 		}
 
-		goldenAssert(t, []byte(StructToZodSchema(Payload{})), withGoldenZodVersion("v4"))
+		assert.Panics(t, func() { StructToZodSchema(Payload{}) })
+	})
+
+	t.Run("multiple formats panics", func(t *testing.T) {
+		type Payload struct {
+			Value string `validate:"email,url"`
+		}
+
+		assert.Panics(t, func() { StructToZodSchema(Payload{}) })
+	})
+
+	t.Run("optional format with nullable pointer", func(t *testing.T) {
+		type Payload struct {
+			Email *string `validate:"omitempty,email" json:"email"`
+		}
+
+		assertSchema(t, Payload{}, "v3", "v4")
 	})
 
 	t.Run("enum keyed maps become partial records", func(t *testing.T) {
@@ -848,62 +536,19 @@ func TestZodV4Defaults(t *testing.T) {
 }
 
 func TestNumberValidations(t *testing.T) {
-	t.Run("gte_lte", func(t *testing.T) {
-		type User1 struct {
-			Age int `validate:"gte=18,lte=60"`
-		}
-		assertSchema(t, User1{})
+	assertValidators(t, reflect.TypeOf(0), []struct{ name, tag string }{
+		{"gte_lte", "gte=18,lte=60"},
+		{"gt_lt", "gt=18,lt=60"},
+		{"eq", "eq=18"},
+		{"ne", "ne=18"},
+		{"oneof", "oneof=18 19 20"},
+		{"min_max", "min=18,max=60"},
+		{"len", "len=18"},
 	})
 
-	t.Run("gt_lt", func(t *testing.T) {
-		type User2 struct {
-			Age int `validate:"gt=18,lt=60"`
-		}
-		assertSchema(t, User2{})
-	})
-
-	t.Run("eq", func(t *testing.T) {
-		type User3 struct {
-			Age int `validate:"eq=18"`
-		}
-		assertSchema(t, User3{})
-	})
-
-	t.Run("ne", func(t *testing.T) {
-		type User4 struct {
-			Age int `validate:"ne=18"`
-		}
-		assertSchema(t, User4{})
-	})
-
-	t.Run("oneof", func(t *testing.T) {
-		type User5 struct {
-			Age int `validate:"oneof=18 19 20"`
-		}
-		assertSchema(t, User5{})
-	})
-
-	t.Run("min_max", func(t *testing.T) {
-		type User6 struct {
-			Age int `validate:"min=18,max=60"`
-		}
-		assertSchema(t, User6{})
-	})
-
-	t.Run("len", func(t *testing.T) {
-		type User7 struct {
-			Age int `validate:"len=18"`
-		}
-		assertSchema(t, User7{})
-	})
-
-	t.Run("bad", func(t *testing.T) {
-		type User8 struct {
-			Age int `validate:"bad=18"`
-		}
-		assert.Panics(t, func() {
-			StructToZodSchema(User8{})
-		})
+	t.Run("bad tag panics", func(t *testing.T) {
+		type Bad struct{ Age int `validate:"bad=18"` }
+		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 	})
 }
 
@@ -966,109 +611,31 @@ func TestMapWithStruct(t *testing.T) {
 }
 
 func TestMapWithValidations(t *testing.T) {
-	t.Run("required", func(t *testing.T) {
-		type Required struct {
-			Map map[string]string `validate:"required"`
-		}
-		assertSchema(t, Required{})
+	assertValidators(t, reflect.TypeOf(map[string]string{}), []struct{ name, tag string }{
+		{"required", "required"},
+		{"min", "min=1"},
+		{"max", "max=1"},
+		{"len", "len=1"},
+		{"minmax", "min=1,max=2"},
+		{"eq", "eq=1"},
+		{"ne", "ne=1"},
+		{"gt", "gt=1"},
+		{"gte", "gte=1"},
+		{"lt", "lt=1"},
+		{"lte", "lte=1"},
+		{"dive1", "dive,min=2"},
 	})
 
-	t.Run("min", func(t *testing.T) {
-		type Min struct {
-			Map map[string]string `validate:"min=1"`
-		}
-		assertSchema(t, Min{})
+	t.Run("dive_nested", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf([]map[string]string{}), []struct{ name, tag string }{
+			{"dive2", "required,dive,min=2,dive,min=3"},
+			{"dive3", "required,dive,min=2,dive,keys,min=3,endkeys,max=4"},
+		})
 	})
 
-	t.Run("max", func(t *testing.T) {
-		type Max struct {
-			Map map[string]string `validate:"max=1"`
-		}
-		assertSchema(t, Max{})
-	})
-
-	t.Run("len", func(t *testing.T) {
-		type Len struct {
-			Map map[string]string `validate:"len=1"`
-		}
-		assertSchema(t, Len{})
-	})
-
-	t.Run("minmax", func(t *testing.T) {
-		type MinMax struct {
-			Map map[string]string `validate:"min=1,max=2"`
-		}
-		assertSchema(t, MinMax{})
-	})
-
-	t.Run("eq", func(t *testing.T) {
-		type Eq struct {
-			Map map[string]string `validate:"eq=1"`
-		}
-		assertSchema(t, Eq{})
-	})
-
-	t.Run("ne", func(t *testing.T) {
-		type Ne struct {
-			Map map[string]string `validate:"ne=1"`
-		}
-		assertSchema(t, Ne{})
-	})
-
-	t.Run("gt", func(t *testing.T) {
-		type Gt struct {
-			Map map[string]string `validate:"gt=1"`
-		}
-		assertSchema(t, Gt{})
-	})
-
-	t.Run("gte", func(t *testing.T) {
-		type Gte struct {
-			Map map[string]string `validate:"gte=1"`
-		}
-		assertSchema(t, Gte{})
-	})
-
-	t.Run("lt", func(t *testing.T) {
-		type Lt struct {
-			Map map[string]string `validate:"lt=1"`
-		}
-		assertSchema(t, Lt{})
-	})
-
-	t.Run("lte", func(t *testing.T) {
-		type Lte struct {
-			Map map[string]string `validate:"lte=1"`
-		}
-		assertSchema(t, Lte{})
-	})
-
-	t.Run("bad", func(t *testing.T) {
-		type Bad struct {
-			Map map[string]string `validate:"bad=1"`
-		}
+	t.Run("bad tag panics", func(t *testing.T) {
+		type Bad struct{ Map map[string]string `validate:"bad=1"` }
 		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
-	})
-
-	t.Run("dive1", func(t *testing.T) {
-		type Dive1 struct {
-			Map map[string]string `validate:"dive,min=2"`
-		}
-		assertSchema(t, Dive1{})
-	})
-
-	t.Run("dive2", func(t *testing.T) {
-		type Dive2 struct {
-			Map []map[string]string `validate:"required,dive,min=2,dive,min=3"`
-		}
-		assertSchema(t, Dive2{})
-	})
-
-	t.Run("dive3", func(t *testing.T) {
-		type Dive3 struct {
-			Map []map[string]string `validate:"required,dive,min=2,dive,keys,min=3,endkeys,max=4"`
-		}
-		assertSchema(t, Dive3{})
 	})
 }
 
@@ -1316,97 +883,37 @@ func TestConvertSlice(t *testing.T) {
 }
 
 func TestConvertSliceWithValidations(t *testing.T) {
-	t.Run("required", func(t *testing.T) {
-		type Required struct {
-			Slice []string `validate:"required"`
-		}
-		assertSchema(t, Required{})
+	assertValidators(t, reflect.TypeOf([]string{}), []struct{ name, tag string }{
+		{"required", "required"},
+		{"min", "min=1"},
+		{"max", "max=1"},
+		{"len", "len=1"},
+		{"eq", "eq=1"},
+		{"gt", "gt=1"},
+		{"gte", "gte=1"},
+		{"lt", "lt=1"},
+		{"lte", "lte=1"},
+		{"ne", "ne=0"},
 	})
 
-	t.Run("min", func(t *testing.T) {
-		type Min struct {
-			Slice []string `validate:"min=1"`
-		}
-		assertSchema(t, Min{})
-	})
-
-	t.Run("max", func(t *testing.T) {
-		type Max struct {
-			Slice []string `validate:"max=1"`
-		}
-		assertSchema(t, Max{})
-	})
-
-	t.Run("len", func(t *testing.T) {
-		type Len struct {
-			Slice []string `validate:"len=1"`
-		}
-		assertSchema(t, Len{})
-	})
-
-	t.Run("eq", func(t *testing.T) {
-		type Eq struct {
-			Slice []string `validate:"eq=1"`
-		}
-		assertSchema(t, Eq{})
-	})
-
-	t.Run("gt", func(t *testing.T) {
-		type Gt struct {
-			Slice []string `validate:"gt=1"`
-		}
-		assertSchema(t, Gt{})
-	})
-
-	t.Run("gte", func(t *testing.T) {
-		type Gte struct {
-			Slice []string `validate:"gte=1"`
-		}
-		assertSchema(t, Gte{})
-	})
-
-	t.Run("lt", func(t *testing.T) {
-		type Lt struct {
-			Slice []string `validate:"lt=1"`
-		}
-		assertSchema(t, Lt{})
-	})
-
-	t.Run("lte", func(t *testing.T) {
-		type Lte struct {
-			Slice []string `validate:"lte=1"`
-		}
-		assertSchema(t, Lte{})
-	})
-
-	t.Run("ne", func(t *testing.T) {
-		type Ne struct {
-			Slice []string `validate:"ne=0"`
-		}
-		assertSchema(t, Ne{})
-	})
-
-	t.Run("bad_oneof", func(t *testing.T) {
-		assert.Panics(t, func() {
-			type Bad struct {
-				Slice []string `validate:"oneof=a b c"`
-			}
-			StructToZodSchema(Bad{})
+	t.Run("dive_nested", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf([][]string{}), []struct{ name, tag string }{
+			{"dive1", "dive,required"},
+			{"dive2", "required,dive,min=1"},
 		})
 	})
 
-	t.Run("dive1", func(t *testing.T) {
-		type Dive1 struct {
-			Slice [][]string `validate:"dive,required"`
-		}
-		assertSchema(t, Dive1{})
+	t.Run("dive_oneof", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf([]string{}), []struct{ name, tag string }{
+			{"dive_oneof", "dive,oneof=a b c"},
+		})
 	})
 
-	t.Run("dive2", func(t *testing.T) {
-		type Dive2 struct {
-			Slice [][]string `validate:"required,dive,min=1"`
-		}
-		assertSchema(t, Dive2{})
+	t.Run("oneof without dive panics", func(t *testing.T) {
+		assert.Panics(t, func() {
+			type Bad struct{ Slice []string `validate:"oneof=a b c"` }
+			StructToZodSchema(Bad{})
+		})
 	})
 }
 
@@ -1610,5 +1117,44 @@ func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
 		}
 
 		assertSchema(t, Article{}, "v3", "v4")
+	})
+}
+
+func TestFormatValidators(t *testing.T) {
+	allFormats := []string{
+		"email", "url", "http_url",
+		"ipv4", "ip4_addr", "ipv6", "ip6_addr",
+		"base64", "datetime", "hexadecimal", "jwt",
+		"uuid", "uuid3", "uuid3_rfc4122",
+		"uuid4", "uuid4_rfc4122",
+		"uuid5", "uuid5_rfc4122",
+		"uuid_rfc4122",
+		"md5", "sha256", "sha384", "sha512",
+	}
+
+	unionFormats := []string{"ip", "ip_addr"}
+
+	toValidators := func(tags []string, prefix string) []struct{ name, tag string } {
+		out := make([]struct{ name, tag string }, len(tags))
+		for i, tag := range tags {
+			out[i] = struct{ name, tag string }{tag, prefix + tag}
+		}
+		return out
+	}
+
+	t.Run("format only", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf(""), toValidators(allFormats, ""), "v3", "v4")
+	})
+
+	t.Run("format with required", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf(""), toValidators(allFormats, "required,"), "v3", "v4")
+	})
+
+	t.Run("union only", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf(""), toValidators(unionFormats, ""), "v3", "v4")
+	})
+
+	t.Run("union with required", func(t *testing.T) {
+		assertValidators(t, reflect.TypeOf(""), toValidators(unionFormats, "required,"), "v3", "v4")
 	})
 }

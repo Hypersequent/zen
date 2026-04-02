@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const SHA256Schema = z.object({
-  Name: z.hash("sha256"),
-})
-export type SHA256 = z.infer<typeof SHA256Schema>
-

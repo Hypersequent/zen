@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const SHA512Schema = z.object({
-  Name: z.hash("sha512"),
-})
-export type SHA512 = z.infer<typeof SHA512Schema>
-

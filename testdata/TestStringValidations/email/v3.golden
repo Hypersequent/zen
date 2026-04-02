@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const EmailSchema = z.object({
-  Name: z.string().email(),
-})
-export type Email = z.infer<typeof EmailSchema>
-

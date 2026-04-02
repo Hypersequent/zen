@@ -1,6 +1,0 @@
-// @typecheck
-export const User2Schema = z.object({
-  Age: z.number().gt(18).lt(60),
-})
-export type User2 = z.infer<typeof User2Schema>
-

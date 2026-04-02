@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const UUIDRFC4122Schema = z.object({
-  Name: z.uuid(),
-})
-export type UUIDRFC4122 = z.infer<typeof UUIDRFC4122Schema>
-

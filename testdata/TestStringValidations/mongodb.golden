@@ -1,6 +1,0 @@
-// @typecheck
-export const mongodbSchema = z.object({
-  Name: z.string().regex(/^[a-f\d]{24}$/),
-})
-export type mongodb = z.infer<typeof mongodbSchema>
-

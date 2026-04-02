@@ -1,6 +1,0 @@
-// @typecheck
-export const User5Schema = z.object({
-  Age: z.number().refine((val) => [18, 19, 20].includes(val)),
-})
-export type User5 = z.infer<typeof User5Schema>
-

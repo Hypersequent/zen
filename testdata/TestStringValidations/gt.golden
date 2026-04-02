@@ -1,6 +1,0 @@
-// @typecheck
-export const GtSchema = z.object({
-  Name: z.string().refine((val) => [...val].length > 5, 'String must contain at least 6 character(s)'),
-})
-export type Gt = z.infer<typeof GtSchema>
-

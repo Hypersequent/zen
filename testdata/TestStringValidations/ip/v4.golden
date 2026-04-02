@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const IPSchema = z.object({
-  Name: z.union([z.ipv4(), z.ipv6()]),
-})
-export type IP = z.infer<typeof IPSchema>
-

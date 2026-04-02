@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const UUID5RFC4122Schema = z.object({
-  Name: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-5[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/),
-})
-export type UUID5RFC4122 = z.infer<typeof UUID5RFC4122Schema>
-

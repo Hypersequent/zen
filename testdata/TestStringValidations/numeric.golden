@@ -1,6 +1,0 @@
-// @typecheck
-export const NumericSchema = z.object({
-  Name: z.string().regex(/^[-+]?[0-9]+(?:\.[0-9]+)?$/),
-})
-export type Numeric = z.infer<typeof NumericSchema>
-

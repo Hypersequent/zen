@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const IPSchema = z.object({
-  Name: z.string().ip(),
-})
-export type IP = z.infer<typeof IPSchema>
-

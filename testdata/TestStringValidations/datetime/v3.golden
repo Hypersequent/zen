@@ -1,7 +1,0 @@
-// @zod-version: v3
-// @typecheck
-export const datetimeSchema = z.object({
-  Name: z.string().datetime(),
-})
-export type datetime = z.infer<typeof datetimeSchema>
-

@@ -1,6 +1,0 @@
-// @typecheck
-export const LenSchema = z.object({
-  Slice: z.string().array().length(1),
-})
-export type Len = z.infer<typeof LenSchema>
-

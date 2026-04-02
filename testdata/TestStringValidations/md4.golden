@@ -1,6 +1,0 @@
-// @typecheck
-export const MD4Schema = z.object({
-  Name: z.string().regex(/^[0-9a-f]{32}$/),
-})
-export type MD4 = z.infer<typeof MD4Schema>
-

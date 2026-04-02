@@ -1,7 +1,0 @@
-// @zod-version: v4
-// @typecheck
-export const Base64Schema = z.object({
-  Name: z.base64(),
-})
-export type Base64 = z.infer<typeof Base64Schema>
-
