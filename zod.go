@@ -1,6 +1,7 @@
 package zen
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -1095,7 +1096,7 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 		}
 
 		if h, ok := c.customTags[valName]; ok {
-			v := h(c, reflect.TypeOf(0), valValue, 0)
+			v := h(c, reflect.TypeOf(""), valValue, 0)
 			validators = append(validators, stringValidator{tag: "_custom", arg: v})
 			continue
 		}
@@ -1161,7 +1162,7 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 	// Phase 3: Handle enum — return early
 	if hasEnum {
 		base := ""
-		chain := ""
+		var chain strings.Builder
 		for _, v := range validators {
 			if v.tag == "oneof" || v.tag == "boolean" {
 				base = v.arg
@@ -1179,10 +1180,10 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 				rendered = renderChain(v)
 			}
 			if strings.HasPrefix(rendered, ".refine") {
-				chain += rendered
+				chain.WriteString(rendered)
 			}
 		}
-		return base + chain
+		return base + chain.String()
 	}
 
 	// Phase 4: Render v3
@@ -1190,28 +1191,29 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 		// Skip required when a format or union is present — format validators
 		// already reject empty strings in both v3 and v4.
 		skipRequired := hasFormat || hasUnion
-		chain := ""
+		var chain strings.Builder
 		for _, v := range validators {
 			if v.tag == "required" && skipRequired {
 				continue
 			}
-			chain += c.renderV3Chain(v)
+			chain.WriteString(c.renderV3Chain(v))
 		}
-		return "z.string()" + chain
+		return "z.string()" + chain.String()
 	}
 
 	// Phase 5: Render v4
 
 	// Case 1: Union (ip/ip_addr)
 	if hasUnion {
-		armChain := ""
+		var armChain strings.Builder
 		for _, v := range validators {
 			if v.tag == "required" || unionTags[v.tag] {
 				continue
 			}
-			armChain += renderChain(v)
+			armChain.WriteString(renderChain(v))
 		}
-		return fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", armChain, armChain)
+		ac := armChain.String()
+		return fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", ac, ac)
 	}
 
 	// Case 2: Format present
@@ -1231,52 +1233,52 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 
 		if hasTransformBefore {
 			// Fall back to z.string() + chains (format becomes a chain method via v3 form)
-			chain := ""
+			var chain strings.Builder
 			for _, v := range validators {
 				if v.tag == "required" && !keepRequired {
 					continue
 				}
 				if formatTags[v.tag] {
-					chain += c.renderV3Chain(v)
+					chain.WriteString(c.renderV3Chain(v))
 				} else {
-					chain += renderChain(v)
+					chain.WriteString(renderChain(v))
 				}
 			}
-			return "z.string()" + chain
+			return "z.string()" + chain.String()
 		}
 
 		// Format as base
 		base := c.renderV4FormatBase(validators[formatIdx])
-		chain := ""
+		var chain strings.Builder
+		if keepRequired {
+			chain.WriteString(".min(1)")
+		}
 		for i := formatIdx + 1; i < len(validators); i++ {
 			v := validators[i]
 			if v.tag == "required" && !keepRequired {
 				continue
 			}
-			chain += renderChain(v)
+			chain.WriteString(renderChain(v))
 		}
-		if keepRequired {
-			chain = ".min(1)" + chain
-		}
-		return base + chain
+		return base + chain.String()
 	}
 
 	// Case 3: No format/union — plain string
-	chain := ""
+	var chain strings.Builder
 	for _, v := range validators {
-		chain += renderChain(v)
+		chain.WriteString(renderChain(v))
 	}
-	return "z.string()" + chain
+	return "z.string()" + chain.String()
 }
 
-// escapeJSString escapes backslashes and double quotes in a string so it can
-// be safely interpolated into a JavaScript double-quoted string literal.
-// Without this, struct tag values like `contains=foo"bar` would produce broken
-// or injectable JS output such as `.includes("foo"bar")`.
+// escapeJSString escapes a string so it can be safely interpolated into a
+// JavaScript double-quoted string literal. Uses json.Marshal for complete
+// handling of quotes, backslashes, newlines, and control characters, then
+// strips the outer quotes.
 func escapeJSString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return s
+	b, _ := json.Marshal(s)
+	// json.Marshal wraps in quotes: "foo" → strip them
+	return string(b[1 : len(b)-1])
 }
 
 // requireIntArg validates that arg is a valid integer for the given tag name.
@@ -1507,7 +1509,7 @@ func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, 
 	}
 
 	if h, ok := c.customTags[valName]; ok {
-		v := h(c, reflect.TypeOf(0), valValue, 0)
+		v := h(c, reflect.TypeOf(""), valValue, 0)
 		if strings.HasPrefix(v, ".refine") {
 			*refines = append(*refines, v)
 		} else {
