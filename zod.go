@@ -1139,7 +1139,7 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 			enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
 			validators = append(validators, stringValidator{tag: "oneof", arg: enumText})
 		case valName == "boolean":
-			validators = append(validators, stringValidator{tag: "boolean", arg: "z.enum(['true', 'false'])"})
+			validators = append(validators, stringValidator{tag: "boolean", arg: `z.enum(["true", "false"] as const)`})
 		case knownStringTags[valName]:
 			validators = append(validators, stringValidator{tag: valName, arg: valValue})
 		default:
