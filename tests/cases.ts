@@ -1606,4 +1606,44 @@ export const cases: TestCase[] = [
 		},
 		success: true,
 	},
+
+	// --- Custom types ---
+	{
+		name: "custom type: mapped to string",
+		golden: "TestCustomTypes/custom_type_mapped_to_string.golden",
+		schema: "UserSchema",
+		input: { Name: "John", Money: "123.45" },
+		success: true,
+	},
+	{
+		name: "custom type: resolves inner generic type",
+		golden: "TestCustomTypes/custom_type_resolves_inner_generic_type.golden",
+		schema: "UserSchema",
+		input: {
+			MaybeName: "John",
+			MaybeAge: 30,
+			MaybeHeight: 1.8,
+			MaybeProfile: { Bio: "Hello" },
+		},
+		success: true,
+	},
+	{
+		name: "custom type: resolves inner generic with nullish",
+		golden: "TestCustomTypes/custom_type_resolves_inner_generic_type.golden",
+		schema: "UserSchema",
+		input: {
+			MaybeName: null,
+			MaybeAge: undefined,
+			MaybeHeight: null,
+			MaybeProfile: undefined,
+		},
+		success: true,
+	},
+	{
+		name: "custom type: nullable pointer with custom handler",
+		golden: "TestCustomTypes/custom_type_with_nullable_control.golden",
+		schema: "UserSchema",
+		input: { Name: "John", Email: null },
+		success: true,
+	},
 ];

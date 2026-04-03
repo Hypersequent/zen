@@ -789,29 +789,79 @@ func TestDuration(t *testing.T) {
 	assertSchema(t, User{})
 }
 
-func TestCustom(t *testing.T) {
-	type Decimal struct {
-		Value    int
-		Exponent int
-	}
+// Wrapper mimics a generic optional type like 4d63.com/optional.Optional[T].
+// The custom handler resolves the inner type via ConvertType(t.Elem(), ...).
+type Wrapper[T any] struct{ Value T }
 
-	type User struct {
-		Name  string
-		Money Decimal
-	}
+func TestCustomTypes(t *testing.T) {
+	t.Run("custom type mapped to string", func(t *testing.T) {
+		type Decimal struct {
+			Value    int
+			Exponent int
+		}
+		type User struct {
+			Name  string
+			Money Decimal
+		}
 
-	customTypes := map[string]CustomFn{
-		"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
-			return "z.string()"
-		},
-	}
+		customTypes := map[string]CustomFn{
+			"github.com/hypersequent/zen.Decimal": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return "z.string()"
+			},
+		}
 
-	v3c := NewConverterWithOpts(WithCustomTypes(customTypes), WithZodV3())
-	v4c := NewConverterWithOpts(WithCustomTypes(customTypes))
-	v3out := v3c.Convert(User{})
-	v4out := v4c.Convert(User{})
-	assert.Equal(t, v3out, v4out)
-	goldenAssert(t, []byte(v4out))
+		v3c := NewConverterWithOpts(WithCustomTypes(customTypes), WithZodV3())
+		v4c := NewConverterWithOpts(WithCustomTypes(customTypes))
+		v3out := v3c.Convert(User{})
+		v4out := v4c.Convert(User{})
+		assert.Equal(t, v3out, v4out)
+		goldenAssert(t, []byte(v4out))
+	})
+
+	t.Run("custom type resolves inner generic type", func(t *testing.T) {
+		type Profile struct {
+			Bio string
+		}
+		type User struct {
+			MaybeName    Wrapper[string]
+			MaybeAge     Wrapper[int]
+			MaybeHeight  Wrapper[float64]
+			MaybeProfile Wrapper[Profile]
+		}
+
+		customTypes := map[string]CustomFn{
+			"github.com/hypersequent/zen.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return fmt.Sprintf("%s.optional().nullish()", c.ConvertType(t.Field(0).Type, validate, i))
+			},
+		}
+
+		v3c := NewConverterWithOpts(WithCustomTypes(customTypes), WithZodV3())
+		v4c := NewConverterWithOpts(WithCustomTypes(customTypes))
+		v3out := v3c.Convert(User{})
+		v4out := v4c.Convert(User{})
+		assert.Equal(t, v3out, v4out)
+		goldenAssert(t, []byte(v4out))
+	})
+
+	t.Run("custom type with nullable control", func(t *testing.T) {
+		type User struct {
+			Name  string
+			Email *Wrapper[string]
+		}
+
+		customTypes := map[string]CustomFn{
+			"github.com/hypersequent/zen.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return fmt.Sprintf("%s.optional()", c.ConvertType(t.Field(0).Type, validate, i))
+			},
+		}
+
+		v3c := NewConverterWithOpts(WithCustomTypes(customTypes), WithZodV3())
+		v4c := NewConverterWithOpts(WithCustomTypes(customTypes))
+		v3out := v3c.Convert(User{})
+		v4out := v4c.Convert(User{})
+		assert.Equal(t, v3out, v4out)
+		goldenAssert(t, []byte(v4out))
+	})
 }
 
 func TestEverything(t *testing.T) {
