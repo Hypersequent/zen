@@ -1096,6 +1096,8 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 		}
 
 		if h, ok := c.customTags[valName]; ok {
+			// The type parameter is string since this is a string validation context.
+			// Custom tag handlers may inspect it to vary their output by field type.
 			v := h(c, reflect.TypeOf(""), valValue, 0)
 			validators = append(validators, stringValidator{tag: "_custom", arg: v})
 			continue
@@ -1470,9 +1472,11 @@ func (c *Converter) renderV4FormatBase(v stringValidator) string {
 	}
 }
 
+// isPartialRecordKeySchema returns true if the key schema represents a finite
+// set of keys (enum), meaning z.partialRecord should be used instead of z.record.
 func isPartialRecordKeySchema(schema string) bool {
 	schema = strings.TrimSpace(schema)
-	return strings.HasPrefix(schema, "z.enum(") || strings.HasPrefix(schema, "z.literal(")
+	return strings.HasPrefix(schema, "z.enum(")
 }
 
 func (c *Converter) parseValidationTagPart(part string) (string, string, bool) {
@@ -1509,6 +1513,8 @@ func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, 
 	}
 
 	if h, ok := c.customTags[valName]; ok {
+		// The type parameter is string since this is a string validation context.
+		// Custom tag handlers may inspect it to vary their output by field type.
 		v := h(c, reflect.TypeOf(""), valValue, 0)
 		if strings.HasPrefix(v, ".refine") {
 			*refines = append(*refines, v)
