@@ -669,11 +669,11 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 
 func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
 	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
-	typeName := typeName(f.Type)
-	entry, ok := c.outputs[typeName]
+	name := typeName(f.Type)
+	entry, ok := c.outputs[name]
 	if ok && entry.selfRef {
 		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
-		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName)), false
+		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, name)), false
 	}
 
 	return fmt.Sprintf(".merge(%s)", t), true
