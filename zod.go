@@ -749,30 +749,37 @@ forParts:
 			if valValue != "" {
 				switch valName {
 				case "min":
+					requireIntArg("min", valValue)
 					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
 				case "max":
+					requireIntArg("max", valValue)
 					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
 				case "len":
+					requireIntArg("len", valValue)
 					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
 				case "eq":
+					requireIntArg("eq", valValue)
 					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
 				case "ne":
+					requireIntArg("ne", valValue)
 					refines = append(refines, fmt.Sprintf(".refine((val) => val.length !== %s)", valValue))
 				case "gt":
-					val, err := strconv.Atoi(valValue)
-					if err != nil || val < 0 {
+					val := requireIntArg("gt", valValue)
+					if val < 0 {
 						panic(fmt.Sprintf("invalid gt value: %s", valValue))
 					}
 					validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
 				case "gte":
+					requireIntArg("gte", valValue)
 					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
 				case "lt":
-					val, err := strconv.Atoi(valValue)
-					if err != nil || val <= 0 {
+					val := requireIntArg("lt", valValue)
+					if val <= 0 {
 						panic(fmt.Sprintf("invalid lt value: %s", valValue))
 					}
 					validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
 				case "lte":
+					requireIntArg("lte", valValue)
 					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
 
 				default:
@@ -859,22 +866,31 @@ forParts:
 		if valValue != "" {
 			switch valName {
 			case "min":
+				requireIntArg("min", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
 			case "max":
+				requireIntArg("max", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
 			case "len":
+				requireIntArg("len", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
 			case "eq":
+				requireIntArg("eq", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
 			case "ne":
+				requireIntArg("ne", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length !== %s, 'Map wrong size')", valValue))
 			case "gt":
+				requireIntArg("gt", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length > %s, 'Map too small')", valValue))
 			case "gte":
+				requireIntArg("gte", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
 			case "lt":
+				requireIntArg("lt", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length < %s, 'Map too large')", valValue))
 			case "lte":
+				requireIntArg("lte", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
 
 			default:
@@ -1000,21 +1016,30 @@ func (c *Converter) validateNumber(validate string) string {
 		if valValue != "" {
 			switch valName {
 			case "gt":
+				requireNumericArg("gt", valValue)
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
 			case "gte", "min":
+				requireNumericArg(valName, valValue)
 				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
 			case "lt":
+				requireNumericArg("lt", valValue)
 				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
 			case "lte", "max":
+				requireNumericArg(valName, valValue)
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
 			case "eq", "len":
+				requireNumericArg(valName, valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "ne":
+				requireNumericArg("ne", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => val !== %s)", valValue))
 			case "oneof":
 				vals := strings.Fields(valValue)
 				if len(vals) == 0 {
 					panic(fmt.Sprintf("invalid oneof validation: %s", part))
+				}
+				for _, v := range vals {
+					requireNumericArg("oneof", v)
 				}
 				refines = append(refines, fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
 
@@ -1293,6 +1318,14 @@ func requireIntArg(tag, arg string) int {
 	return val
 }
 
+// requireNumericArg validates that arg is a valid number (integer or float).
+// Panics if arg is not a valid number.
+func requireNumericArg(tag, arg string) {
+	if _, err := strconv.ParseFloat(arg, 64); err != nil {
+		panic(fmt.Sprintf("%s= requires a numeric argument, got: %s", tag, arg))
+	}
+}
+
 // regexChainMap maps validator tags to their regex pattern strings.
 // Used by renderChain and renderV3Chain to generate .regex() calls.
 var regexChainMap = map[string]string{
@@ -1425,7 +1458,7 @@ func (c *Converter) renderV3Chain(v stringValidator) string {
 	case "datetime":
 		return ".datetime()"
 	default:
-		return ""
+		panic(fmt.Sprintf("renderV3Chain: unhandled tag %q", v.tag))
 	}
 }
 

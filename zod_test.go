@@ -600,6 +600,39 @@ func TestNumberValidations(t *testing.T) {
 		}
 		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 	})
+
+	t.Run("non-numeric arg panics", func(t *testing.T) {
+		tags := []string{"gt", "gte", "lt", "lte", "min", "max", "eq", "ne", "len"}
+		for _, tag := range tags {
+			t.Run(tag, func(t *testing.T) {
+				assert.Panics(t, func() {
+					st := reflect.StructOf([]reflect.StructField{{
+						Name: "V",
+						Type: reflect.TypeOf(0),
+						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"v"`, tag)),
+					}})
+					StructToZodSchema(reflect.New(st).Elem().Interface())
+				})
+			})
+		}
+		t.Run("oneof", func(t *testing.T) {
+			assert.Panics(t, func() {
+				st := reflect.StructOf([]reflect.StructField{{
+					Name: "V",
+					Type: reflect.TypeOf(0),
+					Tag:  reflect.StructTag(`validate:"oneof=1 abc 3" json:"v"`),
+				}})
+				StructToZodSchema(reflect.New(st).Elem().Interface())
+			})
+		})
+	})
+
+	t.Run("float args are accepted", func(t *testing.T) {
+		type S struct {
+			V float64 `validate:"gt=1.5,lt=9.9"`
+		}
+		assert.NotPanics(t, func() { StructToZodSchema(S{}) })
+	})
 }
 
 func TestInterfaceAny(t *testing.T) {
@@ -688,6 +721,22 @@ func TestMapWithValidations(t *testing.T) {
 			Map map[string]string `validate:"bad=1"`
 		}
 		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+	})
+
+	t.Run("non-integer args panic", func(t *testing.T) {
+		tags := []string{"min", "max", "len", "eq", "ne", "gt", "gte", "lt", "lte"}
+		for _, tag := range tags {
+			t.Run(tag, func(t *testing.T) {
+				assert.Panics(t, func() {
+					st := reflect.StructOf([]reflect.StructField{{
+						Name: "M",
+						Type: reflect.TypeOf(map[string]string{}),
+						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"m"`, tag)),
+					}})
+					StructToZodSchema(reflect.New(st).Elem().Interface())
+				})
+			})
+		}
 	})
 }
 
@@ -1043,6 +1092,22 @@ func TestConvertSliceWithValidations(t *testing.T) {
 			}
 			StructToZodSchema(Bad{})
 		})
+	})
+
+	t.Run("non-integer args panic", func(t *testing.T) {
+		tags := []string{"min", "max", "len", "eq", "ne", "gt", "gte", "lt", "lte"}
+		for _, tag := range tags {
+			t.Run(tag, func(t *testing.T) {
+				assert.Panics(t, func() {
+					st := reflect.StructOf([]reflect.StructField{{
+						Name: "V",
+						Type: reflect.TypeOf([]string{}),
+						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"v"`, tag)),
+					}})
+					StructToZodSchema(reflect.New(st).Elem().Interface())
+				})
+			})
+		}
 	})
 }
 

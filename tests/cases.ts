@@ -1293,12 +1293,26 @@ export const cases: TestCase[] = [
 		success: false,
 	},
 
-	// --- urlSchema ---
+	// --- urlSchema (z.url() accepts any scheme) ---
 	{
-		name: "url: accepts valid url",
+		name: "url: accepts https",
 		golden: "TestFormatValidators/format_only/v4.golden",
 		schema: "urlSchema",
 		input: { value: "https://example.com" },
+		success: true,
+	},
+	{
+		name: "url: accepts ftp",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "urlSchema",
+		input: { value: "ftp://files.example.com/file.txt" },
+		success: true,
+	},
+	{
+		name: "url: accepts mailto",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "urlSchema",
+		input: { value: "mailto:user@example.com" },
 		success: true,
 	},
 	{
@@ -1306,6 +1320,29 @@ export const cases: TestCase[] = [
 		golden: "TestFormatValidators/format_only/v4.golden",
 		schema: "urlSchema",
 		input: { value: "not a url" },
+		success: false,
+	},
+
+	// --- http_urlSchema (z.httpUrl() only accepts http/https) ---
+	{
+		name: "http_url: accepts https",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "https://example.com" },
+		success: true,
+	},
+	{
+		name: "http_url: rejects ftp",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "ftp://files.example.com/file.txt" },
+		success: false,
+	},
+	{
+		name: "http_url: rejects mailto",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "mailto:user@example.com" },
 		success: false,
 	},
 
