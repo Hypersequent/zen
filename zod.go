@@ -1108,9 +1108,6 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 			for i := 0; i < len(vals); i++ {
 				vals[i] = escapeJSString(strings.ReplaceAll(vals[i], "'", ""))
 			}
-			if len(vals) == 0 {
-				panic("oneof= must be followed by a list of values")
-			}
 			enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
 			validators = append(validators, stringValidator{tag: "oneof", arg: enumText})
 		case valName == "boolean":
@@ -1276,6 +1273,12 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 // be safely interpolated into a JavaScript double-quoted string literal.
 // Without this, struct tag values like `contains=foo"bar` would produce broken
 // or injectable JS output such as `.includes("foo"bar")`.
+func escapeJSString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
 // requireIntArg validates that arg is a valid integer for the given tag name.
 // Returns the parsed value. Panics if arg is not a valid integer.
 func requireIntArg(tag, arg string) int {
@@ -1284,12 +1287,6 @@ func requireIntArg(tag, arg string) int {
 		panic(fmt.Sprintf("%s= requires an integer argument, got: %s", tag, arg))
 	}
 	return val
-}
-
-func escapeJSString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return s
 }
 
 // regexChainMap maps validator tags to their regex pattern strings.
