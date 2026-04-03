@@ -971,7 +971,11 @@ func getValidateValues(validate string) string {
 	var validateValues string
 
 	if strings.Contains(validate, "dive,keys") {
-		removedPrefix := strings.SplitN(validate, ",endkeys", 2)[1]
+		parts := strings.SplitN(validate, ",endkeys", 2)
+		if len(parts) < 2 {
+			panic("malformed validation: 'dive,keys' without matching 'endkeys'")
+		}
+		removedPrefix := parts[1]
 
 		if strings.Contains(removedPrefix, ",dive") {
 			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
@@ -1661,7 +1665,7 @@ func getTypeNameWithGenerics(name string) string {
 
 	typeArgs := strings.Split(name[typeArgsIdx+1:len(name)-1], ",")
 	for _, arg := range typeArgs {
-		sb.WriteString(strings.ToTitle(arg[:1])) // Capitalize first letter
+		sb.WriteString(strings.ToUpper(arg[:1])) // Capitalize first letter
 		sb.WriteString(arg[1:])
 	}
 
