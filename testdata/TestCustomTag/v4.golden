@@ -7,12 +7,12 @@ export const SortParamsSchema = z.object({
 export type SortParams = z.infer<typeof SortParamsSchema>
 
 export const RequestSchema = z.object({
+  ...SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}).shape,
   PaginationParams: z.object({
     start: z.number().gt(0).optional(),
     end: z.number().gt(0).optional(),
   }).refine((val) => !val.start || !val.end || val.start < val.end, 'Start should be less than end'),
   search: z.string().refine((val) => !val || /^[a-z0-9_]*$/.test(val), 'Invalid search identifier').optional(),
-  ...SortParamsSchema.extend({field: z.enum(['title', 'address', 'age', 'dob'])}).shape,
 })
 export type Request = z.infer<typeof RequestSchema>
 

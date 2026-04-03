@@ -411,6 +411,27 @@ func TestStringValidations(t *testing.T) {
 		}
 		assert.Panics(t, func() { StructToZodSchema(Bad2{}) })
 	})
+
+	t.Run("gt with non-integer panics", func(t *testing.T) {
+		type Bad struct {
+			Name string `validate:"gt=abc"`
+		}
+		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+	})
+
+	t.Run("lt with non-integer panics", func(t *testing.T) {
+		type Bad struct {
+			Name string `validate:"lt=abc"`
+		}
+		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
+	})
+
+	t.Run("escapeJSString escapes quotes and backslashes", func(t *testing.T) {
+		assert.Equal(t, `foo\"bar`, escapeJSString(`foo"bar`))
+		assert.Equal(t, `foo\\bar`, escapeJSString(`foo\bar`))
+		assert.Equal(t, `a\"b\\c`, escapeJSString(`a"b\c`))
+		assert.Equal(t, `no change`, escapeJSString(`no change`))
+	})
 }
 
 func TestZodV4Defaults(t *testing.T) {
@@ -505,6 +526,20 @@ func TestZodV4Defaults(t *testing.T) {
 		assertSchema(t, Payload{}, "v4")
 	})
 
+	t.Run("named field shadows embedded field", func(t *testing.T) {
+		type Base struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+
+		type Child struct {
+			Base
+			ID int `json:"id"` // shadows Base.ID, keeps Base.Name
+		}
+
+		assertSchema(t, Child{}, "v3", "v4")
+	})
+
 	t.Run("recursive embedded shapes preserve encounter order for duplicate keys", func(t *testing.T) {
 		type Base struct {
 			ID string `json:"id"`
@@ -519,11 +554,12 @@ func TestZodV4Defaults(t *testing.T) {
 		goldenAssert(t, []byte(StructToZodSchema(Node{})), withGoldenZodVersion("v4"))
 	})
 
-	t.Run("recursive embedded shapes keep named fields before spreads", func(t *testing.T) {
+	t.Run("recursive embedded shapes keep named fields after spreads to override embedded fields", func(t *testing.T) {
 		type TreeNode struct {
 			Value     string
 			CreatedAt time.Time
 			Children  *[]TreeNode
+			UpdatedAt string
 		}
 
 		type Tree struct {
@@ -547,7 +583,9 @@ func TestNumberValidations(t *testing.T) {
 	})
 
 	t.Run("bad tag panics", func(t *testing.T) {
-		type Bad struct{ Age int `validate:"bad=18"` }
+		type Bad struct {
+			Age int `validate:"bad=18"`
+		}
 		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 	})
 }
@@ -634,7 +672,9 @@ func TestMapWithValidations(t *testing.T) {
 	})
 
 	t.Run("bad tag panics", func(t *testing.T) {
-		type Bad struct{ Map map[string]string `validate:"bad=1"` }
+		type Bad struct {
+			Map map[string]string `validate:"bad=1"`
+		}
 		assert.Panics(t, func() { StructToZodSchema(Bad{}) })
 	})
 }
@@ -911,7 +951,9 @@ func TestConvertSliceWithValidations(t *testing.T) {
 
 	t.Run("oneof without dive panics", func(t *testing.T) {
 		assert.Panics(t, func() {
-			type Bad struct{ Slice []string `validate:"oneof=a b c"` }
+			type Bad struct {
+				Slice []string `validate:"oneof=a b c"`
+			}
 			StructToZodSchema(Bad{})
 		})
 	})

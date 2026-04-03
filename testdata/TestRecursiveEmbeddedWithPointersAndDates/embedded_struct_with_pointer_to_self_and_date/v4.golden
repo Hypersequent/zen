@@ -13,8 +13,8 @@ const CommentSchemaShape = {
 export const CommentSchema: z.ZodType<Comment> = z.object(CommentSchemaShape)
 
 export const ArticleSchema = z.object({
-  Title: z.string(),
   ...CommentSchemaShape,
+  Title: z.string(),
 })
 export type Article = z.infer<typeof ArticleSchema>
 

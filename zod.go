@@ -180,15 +180,14 @@ type stringValidator struct {
 }
 
 type Converter struct {
-	prefix           string
-	customTypes      map[string]CustomFn
-	customTags       map[string]CustomFn
-	ignoreTags       []string
-	zodV3            bool
-	lastFieldSelfRef bool
-	structs          int
-	outputs          map[string]entry
-	stack            []meta
+	prefix      string
+	customTypes map[string]CustomFn
+	customTags  map[string]CustomFn
+	ignoreTags  []string
+	zodV3       bool
+	structs     int
+	outputs     map[string]entry
+	stack       []meta
 }
 
 func (c *Converter) addSchema(name string, data string, selfRef bool) {
@@ -330,6 +329,7 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 
 	merges := []string{}
 	embeddedFields := []string{}
+	namedFields := []string{}
 
 	fields := input.NumField()
 	for i := 0; i < fields; i++ {
@@ -349,14 +349,21 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 				embeddedFields = append(embeddedFields, c.convertEmbeddedFieldSpread(field, indent+1))
 			}
 		} else {
-			output.WriteString(c.convertNamedField(field, indent+1, optional, nullable))
+			namedFields = append(namedFields, c.convertNamedField(field, indent+1, optional, nullable))
 		}
 	}
 
+	// In v4, embedded spreads are written before named fields so that named
+	// fields override embedded ones (last key wins in JS object literals).
+	// This matches Go's shadowing semantics where the outer struct's field
+	// takes precedence over the embedded struct's field.
 	if !c.zodV3 {
 		for _, line := range embeddedFields {
 			output.WriteString(line)
 		}
+	}
+	for _, line := range namedFields {
+		output.WriteString(line)
 	}
 
 	output.WriteString(indentation(indent))
@@ -473,19 +480,28 @@ func (c *Converter) handleCustomType(t reflect.Type, validate string, indent int
 	return "", false
 }
 
+type convertResult struct {
+	text    string
+	selfRef bool
+}
+
 // ConvertType should be called from custom converter functions.
 func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) string {
+	return c.convertType(t, validate, indent).text
+}
+
+func (c *Converter) convertType(t reflect.Type, validate string, indent int) convertResult {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()
 		validate = strings.TrimPrefix(validate, "omitempty")
 		validate = strings.TrimPrefix(validate, ",")
-		return c.ConvertType(inner, validate, indent)
+		return c.convertType(inner, validate, indent)
 	}
 
 	// Custom types should be handled before maps/slices, as we might have
 	// custom types that are maps/slices.
 	if custom, ok := c.handleCustomType(t, validate, indent); ok {
-		return custom
+		return convertResult{text: custom}
 	}
 
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
@@ -493,12 +509,13 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	}
 
 	if t.Kind() == reflect.Map {
-		return c.convertMap(t, validate, indent)
+		return convertResult{text: c.convertMap(t, validate, indent)}
 	}
 
 	if t.Kind() == reflect.Struct {
 		var validateStr strings.Builder
 		var refines []string
+		var selfRef bool
 		name := typeName(t)
 		parts := strings.Split(validate, ",")
 
@@ -514,14 +531,14 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 				if c.zodV3 {
 					validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
 				} else {
-					c.lastFieldSelfRef = true
+					selfRef = true
 					validateStr.WriteString(schemaName(c.prefix, name))
 				}
 			} else {
 				// throws panic if there is a cycle
 				detectCycle(name, c.stack)
-				data, selfRef := c.convertStructTopLevel(t, name)
-				c.addSchema(name, data, selfRef)
+				data, sRef := c.convertStructTopLevel(t, name)
+				c.addSchema(name, data, sRef)
 				validateStr.WriteString(schemaName(c.prefix, name))
 			}
 		}
@@ -547,7 +564,8 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 			validateStr.WriteString(refine)
 		}
 
-		return validateStr.String()
+		schema := validateStr.String()
+		return convertResult{text: schema, selfRef: selfRef}
 	}
 
 	// boolean, number, string, any
@@ -560,13 +578,13 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	if validate != "" {
 		switch zodType {
 		case "string":
-			return c.validateString(validate)
+			return convertResult{text: c.validateString(validate)}
 		case "number":
 			validateStr = c.validateNumber(validate)
 		}
 	}
 
-	return fmt.Sprintf("z.%s()%s", zodType, validateStr)
+	return convertResult{text: fmt.Sprintf("z.%s()%s", zodType, validateStr)}
 }
 
 func (c *Converter) getType(t reflect.Type, indent int) string {
@@ -627,16 +645,14 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 		nullableCall = ".nullable()"
 	}
 
-	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
-	isSelfRef := c.lastFieldSelfRef
-	c.lastFieldSelfRef = false
+	res := c.convertType(f.Type, f.Tag.Get("validate"), indent)
 
-	if isSelfRef && !c.zodV3 {
+	if res.selfRef && !c.zodV3 {
 		return fmt.Sprintf(
 			"%sget %s() { return %s%s%s; },\n",
 			indentation(indent),
 			name,
-			t,
+			res.text,
 			optionalCall,
 			nullableCall)
 	}
@@ -645,13 +661,13 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 		"%s%s: %s%s%s,\n",
 		indentation(indent),
 		name,
-		t,
+		res.text,
 		optionalCall,
 		nullableCall)
 }
 
 func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
-	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
+	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
 	typeName := typeName(f.Type)
 	entry, ok := c.outputs[typeName]
 	if ok && entry.selfRef {
@@ -663,7 +679,7 @@ func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int)
 }
 
 func (c *Converter) convertEmbeddedFieldSpread(f reflect.StructField, indent int) string {
-	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
+	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
 	typeName := typeName(f.Type)
 	entry, ok := c.outputs[typeName]
 	if ok && entry.selfRef {
@@ -712,7 +728,7 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 	return typeName(f.Type), true
 }
 
-func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) string {
+func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) convertResult {
 	var validateStr strings.Builder
 	var refines []string
 	validateCurrent := getValidateCurrent(validate)
@@ -783,9 +799,11 @@ forParts:
 		validateStr.WriteString(refine)
 	}
 
-	return fmt.Sprintf(
-		"%s.array()%s",
-		c.ConvertType(t.Elem(), getValidateAfterDive(validate), indent), validateStr.String())
+	elemResult := c.convertType(t.Elem(), getValidateAfterDive(validate), indent)
+	return convertResult{
+		text:    fmt.Sprintf("%s.array()%s", elemResult.text, validateStr.String()),
+		selfRef: elemResult.selfRef,
+	}
 }
 
 func (c *Converter) getTypeSliceAndArray(t reflect.Type, indent int) string {
@@ -1048,6 +1066,24 @@ func (c *Converter) validateString(validate string) string {
 	return c.renderStringSchema(validators)
 }
 
+var knownStringTags = map[string]bool{
+	"required": true, "email": true, "url": true, "http_url": true,
+	"ipv4": true, "ip4_addr": true, "ipv6": true, "ip6_addr": true,
+	"ip": true, "ip_addr": true,
+	"url_encoded": true, "alpha": true, "alphanum": true,
+	"alphanumunicode": true, "alphaunicode": true, "ascii": true,
+	"lowercase": true, "number": true, "numeric": true, "uppercase": true,
+	"base64": true, "mongodb": true, "datetime": true, "hexadecimal": true,
+	"json": true, "jwt": true, "latitude": true, "longitude": true,
+	"uuid": true, "uuid3": true, "uuid3_rfc4122": true,
+	"uuid4": true, "uuid4_rfc4122": true,
+	"uuid5": true, "uuid5_rfc4122": true, "uuid_rfc4122": true,
+	"md4": true, "md5": true, "sha256": true, "sha384": true, "sha512": true,
+	"contains": true, "endswith": true, "startswith": true,
+	"eq": true, "ne": true, "len": true, "min": true, "max": true,
+	"gt": true, "gte": true, "lt": true, "lte": true,
+}
+
 func (c *Converter) parseStringValidators(validate string) []stringValidator {
 	var validators []stringValidator
 	parts := strings.Split(validate, ",")
@@ -1064,129 +1100,23 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 			continue
 		}
 
-		if valValue != "" {
-			switch valName {
-			case "oneof":
-				vals := splitParamsRegex.FindAllString(rawPart[6:], -1)
-				for i := 0; i < len(vals); i++ {
-					vals[i] = strings.Replace(vals[i], "'", "", -1)
-				}
-				if len(vals) == 0 {
-					panic("oneof= must be followed by a list of values")
-				}
-				enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
-				validators = append(validators, stringValidator{tag: "oneof", arg: enumText})
-			case "contains":
-				validators = append(validators, stringValidator{tag: "contains", arg: valValue})
-			case "endswith":
-				validators = append(validators, stringValidator{tag: "endswith", arg: valValue})
-			case "startswith":
-				validators = append(validators, stringValidator{tag: "startswith", arg: valValue})
-			case "eq":
-				validators = append(validators, stringValidator{tag: "eq", arg: valValue})
-			case "ne":
-				validators = append(validators, stringValidator{tag: "ne", arg: valValue})
-			case "len":
-				validators = append(validators, stringValidator{tag: "len", arg: valValue})
-			case "min":
-				validators = append(validators, stringValidator{tag: "min", arg: valValue})
-			case "max":
-				validators = append(validators, stringValidator{tag: "max", arg: valValue})
-			case "gt":
-				validators = append(validators, stringValidator{tag: "gt", arg: valValue})
-			case "gte":
-				validators = append(validators, stringValidator{tag: "gte", arg: valValue})
-			case "lt":
-				validators = append(validators, stringValidator{tag: "lt", arg: valValue})
-			case "lte":
-				validators = append(validators, stringValidator{tag: "lte", arg: valValue})
-			default:
-				panic(fmt.Sprintf("unknown validation: %s", rawPart))
-			}
-			continue
-		}
-
-		switch valName {
-		case "omitempty":
+		switch {
+		case valName == "omitempty":
 			// skip
-		case "required":
-			validators = append(validators, stringValidator{tag: "required"})
-		case "email":
-			validators = append(validators, stringValidator{tag: "email"})
-		case "url":
-			validators = append(validators, stringValidator{tag: "url"})
-		case "ipv4", "ip4_addr":
-			validators = append(validators, stringValidator{tag: valName})
-		case "ipv6", "ip6_addr":
-			validators = append(validators, stringValidator{tag: valName})
-		case "ip", "ip_addr":
-			validators = append(validators, stringValidator{tag: valName})
-		case "http_url":
-			validators = append(validators, stringValidator{tag: "http_url"})
-		case "url_encoded":
-			validators = append(validators, stringValidator{tag: "url_encoded"})
-		case "alpha":
-			validators = append(validators, stringValidator{tag: "alpha"})
-		case "alphanum":
-			validators = append(validators, stringValidator{tag: "alphanum"})
-		case "alphanumunicode":
-			validators = append(validators, stringValidator{tag: "alphanumunicode"})
-		case "alphaunicode":
-			validators = append(validators, stringValidator{tag: "alphaunicode"})
-		case "ascii":
-			validators = append(validators, stringValidator{tag: "ascii"})
-		case "boolean":
+		case valName == "oneof" && valValue != "":
+			vals := splitParamsRegex.FindAllString(rawPart[6:], -1)
+			for i := 0; i < len(vals); i++ {
+				vals[i] = escapeJSString(strings.Replace(vals[i], "'", "", -1))
+			}
+			if len(vals) == 0 {
+				panic("oneof= must be followed by a list of values")
+			}
+			enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
+			validators = append(validators, stringValidator{tag: "oneof", arg: enumText})
+		case valName == "boolean":
 			validators = append(validators, stringValidator{tag: "boolean", arg: "z.enum(['true', 'false'])"})
-		case "lowercase":
-			validators = append(validators, stringValidator{tag: "lowercase"})
-		case "number":
-			validators = append(validators, stringValidator{tag: "number"})
-		case "numeric":
-			validators = append(validators, stringValidator{tag: "numeric"})
-		case "uppercase":
-			validators = append(validators, stringValidator{tag: "uppercase"})
-		case "base64":
-			validators = append(validators, stringValidator{tag: "base64"})
-		case "mongodb":
-			validators = append(validators, stringValidator{tag: "mongodb"})
-		case "datetime":
-			validators = append(validators, stringValidator{tag: "datetime"})
-		case "hexadecimal":
-			validators = append(validators, stringValidator{tag: "hexadecimal"})
-		case "json":
-			validators = append(validators, stringValidator{tag: "json"})
-		case "jwt":
-			validators = append(validators, stringValidator{tag: "jwt"})
-		case "latitude":
-			validators = append(validators, stringValidator{tag: "latitude"})
-		case "longitude":
-			validators = append(validators, stringValidator{tag: "longitude"})
-		case "uuid":
-			validators = append(validators, stringValidator{tag: "uuid"})
-		case "uuid3":
-			validators = append(validators, stringValidator{tag: "uuid3"})
-		case "uuid3_rfc4122":
-			validators = append(validators, stringValidator{tag: "uuid3_rfc4122"})
-		case "uuid4":
-			validators = append(validators, stringValidator{tag: "uuid4"})
-		case "uuid4_rfc4122":
-			validators = append(validators, stringValidator{tag: "uuid4_rfc4122"})
-		case "uuid5":
-			validators = append(validators, stringValidator{tag: "uuid5"})
-		case "uuid5_rfc4122":
-			validators = append(validators, stringValidator{tag: "uuid5_rfc4122"})
-		case "uuid_rfc4122":
-			validators = append(validators, stringValidator{tag: "uuid_rfc4122"})
-		case "md4":
-			validators = append(validators, stringValidator{tag: "md4"})
-		case "md5":
-			validators = append(validators, stringValidator{tag: "md5"})
-		case "sha256":
-			validators = append(validators, stringValidator{tag: "sha256"})
-		case "sha384":
-			validators = append(validators, stringValidator{tag: "sha384"})
-		case "sha512":
-			validators = append(validators, stringValidator{tag: "sha512"})
+		case knownStringTags[valName]:
+			validators = append(validators, stringValidator{tag: valName, arg: valValue})
 		default:
 			panic(fmt.Sprintf("unknown validation: %s", rawPart))
 		}
@@ -1337,10 +1267,133 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 	return "z.string()" + chain
 }
 
-func (c *Converter) renderV3Chain(v stringValidator) string {
+// escapeJSString escapes backslashes and double quotes in a string so it can
+// be safely interpolated into a JavaScript double-quoted string literal.
+// Without this, struct tag values like `contains=foo"bar` would produce broken
+// or injectable JS output such as `.includes("foo"bar")`.
+func escapeJSString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
+// regexChainMap maps validator tags to their regex pattern strings.
+// Used by renderChain and renderV3Chain to generate .regex() calls.
+var regexChainMap = map[string]string{
+	"url_encoded": uRLEncodedRegexString,
+	"alpha":       alphaRegexString,
+	"alphanum":    alphaNumericRegexString,
+	"ascii":       aSCIIRegexString,
+	"number":      numberRegexString,
+	"numeric":     numericRegexString,
+	"mongodb":     mongodbRegexString,
+	"latitude":    latitudeRegexString,
+	"longitude":   longitudeRegexString,
+	"md4":         md4RegexString,
+}
+
+func renderRegex(pattern string) string {
+	return fmt.Sprintf(".regex(/%s/)", pattern)
+}
+
+// unicodeRegexChainMap is like regexChainMap but for patterns needing the /u flag.
+var unicodeRegexChainMap = map[string]string{
+	"alphanumunicode": alphaUnicodeNumericRegexString,
+	"alphaunicode":    alphaUnicodeRegexString,
+}
+
+func renderUnicodeRegex(pattern string) string {
+	return fmt.Sprintf(".regex(/%s/u)", pattern)
+}
+
+func renderChain(v stringValidator) string {
+	// Regex-based validators
+	if pattern, ok := regexChainMap[v.tag]; ok {
+		return renderRegex(pattern)
+	}
+	if pattern, ok := unicodeRegexChainMap[v.tag]; ok {
+		return renderUnicodeRegex(pattern)
+	}
+
 	switch v.tag {
 	case "required":
 		return ".min(1)"
+	case "contains":
+		return fmt.Sprintf(`.includes("%s")`, escapeJSString(v.arg))
+	case "startswith":
+		return fmt.Sprintf(`.startsWith("%s")`, escapeJSString(v.arg))
+	case "endswith":
+		return fmt.Sprintf(`.endsWith("%s")`, escapeJSString(v.arg))
+	case "eq":
+		return fmt.Sprintf(`.refine((val) => val === "%s")`, escapeJSString(v.arg))
+	case "ne":
+		return fmt.Sprintf(`.refine((val) => val !== "%s")`, escapeJSString(v.arg))
+	case "len":
+		return fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", v.arg, v.arg)
+	case "min":
+		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
+	case "max":
+		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
+	case "gt":
+		val, err := strconv.Atoi(v.arg)
+		if err != nil {
+			panic(fmt.Sprintf("gt= requires an integer argument, got: %s", v.arg))
+		}
+		return fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1)
+	case "gte":
+		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
+	case "lt":
+		val, err := strconv.Atoi(v.arg)
+		if err != nil {
+			panic(fmt.Sprintf("lt= requires an integer argument, got: %s", v.arg))
+		}
+		return fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1)
+	case "lte":
+		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
+	case "lowercase":
+		return ".refine((val) => val === val.toLowerCase())"
+	case "uppercase":
+		return ".refine((val) => val === val.toUpperCase())"
+	case "json":
+		return ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })"
+	case "_custom":
+		return v.arg
+	default:
+		return ""
+	}
+}
+
+// v3FormatRegexMap maps format validator tags to their v3 regex pattern strings.
+// These tags have v4 top-level builders but fall back to regex in v3.
+var v3FormatRegexMap = map[string]string{
+	"base64":        base64RegexString,
+	"hexadecimal":   hexadecimalRegexString,
+	"jwt":           jWTRegexString,
+	"uuid":          uUIDRegexString,
+	"uuid3":         uUID3RegexString,
+	"uuid3_rfc4122": uUID3RFC4122RegexString,
+	"uuid4":         uUID4RegexString,
+	"uuid4_rfc4122": uUID4RFC4122RegexString,
+	"uuid5":         uUID5RegexString,
+	"uuid5_rfc4122": uUID5RFC4122RegexString,
+	"uuid_rfc4122":  uUIDRFC4122RegexString,
+	"md5":           md5RegexString,
+	"sha256":        sha256RegexString,
+	"sha384":        sha384RegexString,
+	"sha512":        sha512RegexString,
+}
+
+func (c *Converter) renderV3Chain(v stringValidator) string {
+	if s := renderChain(v); s != "" {
+		return s
+	}
+
+	// v3 format regex fallbacks (these have v4 top-level builders but use regex in v3)
+	if pattern, ok := v3FormatRegexMap[v.tag]; ok {
+		return renderRegex(pattern)
+	}
+
+	switch v.tag {
 	case "email":
 		return ".email()"
 	case "url":
@@ -1353,96 +1406,8 @@ func (c *Converter) renderV3Chain(v stringValidator) string {
 		return `.ip({ version: "v6" })`
 	case "http_url":
 		return ".url()"
-	case "base64":
-		return fmt.Sprintf(".regex(/%s/)", base64RegexString)
 	case "datetime":
 		return ".datetime()"
-	case "hexadecimal":
-		return fmt.Sprintf(".regex(/%s/)", hexadecimalRegexString)
-	case "jwt":
-		return fmt.Sprintf(".regex(/%s/)", jWTRegexString)
-	case "uuid":
-		return fmt.Sprintf(".regex(/%s/)", uUIDRegexString)
-	case "uuid3":
-		return fmt.Sprintf(".regex(/%s/)", uUID3RegexString)
-	case "uuid3_rfc4122":
-		return fmt.Sprintf(".regex(/%s/)", uUID3RFC4122RegexString)
-	case "uuid4":
-		return fmt.Sprintf(".regex(/%s/)", uUID4RegexString)
-	case "uuid4_rfc4122":
-		return fmt.Sprintf(".regex(/%s/)", uUID4RFC4122RegexString)
-	case "uuid5":
-		return fmt.Sprintf(".regex(/%s/)", uUID5RegexString)
-	case "uuid5_rfc4122":
-		return fmt.Sprintf(".regex(/%s/)", uUID5RFC4122RegexString)
-	case "uuid_rfc4122":
-		return fmt.Sprintf(".regex(/%s/)", uUIDRFC4122RegexString)
-	case "md4":
-		return fmt.Sprintf(".regex(/%s/)", md4RegexString)
-	case "md5":
-		return fmt.Sprintf(".regex(/%s/)", md5RegexString)
-	case "sha256":
-		return fmt.Sprintf(".regex(/%s/)", sha256RegexString)
-	case "sha384":
-		return fmt.Sprintf(".regex(/%s/)", sha384RegexString)
-	case "sha512":
-		return fmt.Sprintf(".regex(/%s/)", sha512RegexString)
-	case "contains":
-		return fmt.Sprintf(`.includes("%s")`, v.arg)
-	case "startswith":
-		return fmt.Sprintf(`.startsWith("%s")`, v.arg)
-	case "endswith":
-		return fmt.Sprintf(`.endsWith("%s")`, v.arg)
-	case "url_encoded":
-		return fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString)
-	case "alpha":
-		return fmt.Sprintf(".regex(/%s/)", alphaRegexString)
-	case "alphanum":
-		return fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString)
-	case "alphanumunicode":
-		return fmt.Sprintf(".regex(/%s/u)", alphaUnicodeNumericRegexString)
-	case "alphaunicode":
-		return fmt.Sprintf(".regex(/%s/u)", alphaUnicodeRegexString)
-	case "ascii":
-		return fmt.Sprintf(".regex(/%s/)", aSCIIRegexString)
-	case "number":
-		return fmt.Sprintf(".regex(/%s/)", numberRegexString)
-	case "numeric":
-		return fmt.Sprintf(".regex(/%s/)", numericRegexString)
-	case "mongodb":
-		return fmt.Sprintf(".regex(/%s/)", mongodbRegexString)
-	case "latitude":
-		return fmt.Sprintf(".regex(/%s/)", latitudeRegexString)
-	case "longitude":
-		return fmt.Sprintf(".regex(/%s/)", longitudeRegexString)
-	case "eq":
-		return fmt.Sprintf(`.refine((val) => val === "%s")`, v.arg)
-	case "ne":
-		return fmt.Sprintf(`.refine((val) => val !== "%s")`, v.arg)
-	case "len":
-		return fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", v.arg, v.arg)
-	case "min":
-		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
-	case "max":
-		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
-	case "gt":
-		val, _ := strconv.Atoi(v.arg)
-		return fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1)
-	case "gte":
-		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
-	case "lt":
-		val, _ := strconv.Atoi(v.arg)
-		return fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1)
-	case "lte":
-		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
-	case "lowercase":
-		return ".refine((val) => val === val.toLowerCase())"
-	case "uppercase":
-		return ".refine((val) => val === val.toUpperCase())"
-	case "json":
-		return ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })"
-	case "_custom":
-		return v.arg
 	default:
 		return ""
 	}
@@ -1492,70 +1457,7 @@ func (c *Converter) renderV4FormatBase(v stringValidator) string {
 }
 
 func (c *Converter) renderV4Chain(v stringValidator) string {
-	switch v.tag {
-	case "required":
-		return ".min(1)"
-	case "contains":
-		return fmt.Sprintf(`.includes("%s")`, v.arg)
-	case "startswith":
-		return fmt.Sprintf(`.startsWith("%s")`, v.arg)
-	case "endswith":
-		return fmt.Sprintf(`.endsWith("%s")`, v.arg)
-	case "url_encoded":
-		return fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString)
-	case "alpha":
-		return fmt.Sprintf(".regex(/%s/)", alphaRegexString)
-	case "alphanum":
-		return fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString)
-	case "alphanumunicode":
-		return fmt.Sprintf(".regex(/%s/u)", alphaUnicodeNumericRegexString)
-	case "alphaunicode":
-		return fmt.Sprintf(".regex(/%s/u)", alphaUnicodeRegexString)
-	case "ascii":
-		return fmt.Sprintf(".regex(/%s/)", aSCIIRegexString)
-	case "number":
-		return fmt.Sprintf(".regex(/%s/)", numberRegexString)
-	case "numeric":
-		return fmt.Sprintf(".regex(/%s/)", numericRegexString)
-	case "mongodb":
-		return fmt.Sprintf(".regex(/%s/)", mongodbRegexString)
-	case "latitude":
-		return fmt.Sprintf(".regex(/%s/)", latitudeRegexString)
-	case "longitude":
-		return fmt.Sprintf(".regex(/%s/)", longitudeRegexString)
-	case "md4":
-		return fmt.Sprintf(".regex(/%s/)", md4RegexString)
-	case "eq":
-		return fmt.Sprintf(`.refine((val) => val === "%s")`, v.arg)
-	case "ne":
-		return fmt.Sprintf(`.refine((val) => val !== "%s")`, v.arg)
-	case "len":
-		return fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", v.arg, v.arg)
-	case "min":
-		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
-	case "max":
-		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
-	case "gt":
-		val, _ := strconv.Atoi(v.arg)
-		return fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1)
-	case "gte":
-		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
-	case "lt":
-		val, _ := strconv.Atoi(v.arg)
-		return fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1)
-	case "lte":
-		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
-	case "lowercase":
-		return ".refine((val) => val === val.toLowerCase())"
-	case "uppercase":
-		return ".refine((val) => val === val.toUpperCase())"
-	case "json":
-		return ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })"
-	case "_custom":
-		return v.arg
-	default:
-		return ""
-	}
+	return renderChain(v)
 }
 
 func isPartialRecordKeySchema(schema string) bool {

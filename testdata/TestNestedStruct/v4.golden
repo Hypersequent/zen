@@ -11,9 +11,9 @@ export const HasNameSchema = z.object({
 export type HasName = z.infer<typeof HasNameSchema>
 
 export const UserSchema = z.object({
-  Tags: z.string().array().nullable(),
   ...HasIDSchema.shape,
   ...HasNameSchema.shape,
+  Tags: z.string().array().nullable(),
 })
 export type User = z.infer<typeof UserSchema>
 

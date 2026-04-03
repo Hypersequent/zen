@@ -13,8 +13,8 @@ const TreeNodeSchemaShape = {
 export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
 
 export const TreeSchema = z.object({
-  UpdatedAt: z.coerce.date(),
   ...TreeNodeSchemaShape,
+  UpdatedAt: z.coerce.date(),
 })
 export type Tree = z.infer<typeof TreeSchema>
 
