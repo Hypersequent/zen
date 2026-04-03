@@ -1104,9 +1104,9 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 		case valName == "omitempty":
 			// skip
 		case valName == "oneof" && valValue != "":
-			vals := splitParamsRegex.FindAllString(rawPart[6:], -1)
+			vals := splitParamsRegex.FindAllString(rawPart[len("oneof="):], -1)
 			for i := 0; i < len(vals); i++ {
-				vals[i] = escapeJSString(strings.Replace(vals[i], "'", "", -1))
+				vals[i] = escapeJSString(strings.ReplaceAll(vals[i], "'", ""))
 			}
 			if len(vals) == 0 {
 				panic("oneof= must be followed by a list of values")
@@ -1175,7 +1175,12 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 			if v.tag == "oneof" || v.tag == "boolean" {
 				continue
 			}
-			rendered := c.renderV3Chain(v)
+			var rendered string
+			if c.zodV3 {
+				rendered = c.renderV3Chain(v)
+			} else {
+				rendered = renderChain(v)
+			}
 			if strings.HasPrefix(rendered, ".refine") {
 				chain += rendered
 			}
@@ -1207,7 +1212,7 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 			if v.tag == "required" || unionTags[v.tag] {
 				continue
 			}
-			armChain += c.renderV4Chain(v)
+			armChain += renderChain(v)
 		}
 		return fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", armChain, armChain)
 	}
@@ -1237,7 +1242,7 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 				if formatTags[v.tag] {
 					chain += c.renderV3Chain(v)
 				} else {
-					chain += c.renderV4Chain(v)
+					chain += renderChain(v)
 				}
 			}
 			return "z.string()" + chain
@@ -1251,7 +1256,7 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 			if v.tag == "required" && !keepRequired {
 				continue
 			}
-			chain += c.renderV4Chain(v)
+			chain += renderChain(v)
 		}
 		if keepRequired {
 			chain = ".min(1)" + chain
@@ -1262,7 +1267,7 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 	// Case 3: No format/union — plain string
 	chain := ""
 	for _, v := range validators {
-		chain += c.renderV4Chain(v)
+		chain += renderChain(v)
 	}
 	return "z.string()" + chain
 }
@@ -1271,6 +1276,16 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 // be safely interpolated into a JavaScript double-quoted string literal.
 // Without this, struct tag values like `contains=foo"bar` would produce broken
 // or injectable JS output such as `.includes("foo"bar")`.
+// requireIntArg validates that arg is a valid integer for the given tag name.
+// Returns the parsed value. Panics if arg is not a valid integer.
+func requireIntArg(tag, arg string) int {
+	val, err := strconv.Atoi(arg)
+	if err != nil {
+		panic(fmt.Sprintf("%s= requires an integer argument, got: %s", tag, arg))
+	}
+	return val
+}
+
 func escapeJSString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
@@ -1306,6 +1321,7 @@ func renderUnicodeRegex(pattern string) string {
 	return fmt.Sprintf(".regex(/%s/u)", pattern)
 }
 
+// renderChain is used by both v3 and v4 rendering
 func renderChain(v stringValidator) string {
 	// Regex-based validators
 	if pattern, ok := regexChainMap[v.tag]; ok {
@@ -1329,26 +1345,25 @@ func renderChain(v stringValidator) string {
 	case "ne":
 		return fmt.Sprintf(`.refine((val) => val !== "%s")`, escapeJSString(v.arg))
 	case "len":
+		requireIntArg("len", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", v.arg, v.arg)
 	case "min":
+		requireIntArg("min", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
 	case "max":
+		requireIntArg("max", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
 	case "gt":
-		val, err := strconv.Atoi(v.arg)
-		if err != nil {
-			panic(fmt.Sprintf("gt= requires an integer argument, got: %s", v.arg))
-		}
+		val := requireIntArg("gt", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1)
 	case "gte":
+		requireIntArg("gte", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
 	case "lt":
-		val, err := strconv.Atoi(v.arg)
-		if err != nil {
-			panic(fmt.Sprintf("lt= requires an integer argument, got: %s", v.arg))
-		}
+		val := requireIntArg("lt", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1)
 	case "lte":
+		requireIntArg("lte", v.arg)
 		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
 	case "lowercase":
 		return ".refine((val) => val === val.toLowerCase())"
@@ -1452,12 +1467,8 @@ func (c *Converter) renderV4FormatBase(v stringValidator) string {
 	case "sha512":
 		return `z.hash("sha512")`
 	default:
-		return ""
+		panic(fmt.Sprintf("renderV4FormatBase: unhandled format tag %q", v.tag))
 	}
-}
-
-func (c *Converter) renderV4Chain(v stringValidator) string {
-	return renderChain(v)
 }
 
 func isPartialRecordKeySchema(schema string) bool {
