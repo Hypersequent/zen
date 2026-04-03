@@ -1548,6 +1548,13 @@ export const cases: TestCase[] = [
 		input: { Metadata: { draft: "some note" } },
 		success: true,
 	},
+	{
+		name: "v4 defaults: enum keyed maps for partial records reject invalid keys",
+		golden: "TestZodV4Defaults/enum_keyed_maps_become_partial_records.golden",
+		schema: "PayloadSchema",
+		input: { Metadata: { invalid: "some note" } },
+		success: false,
+	},
 
 	// --- TestZodV4Defaults/ip_unions_inherit_generic_string_constraints ---
 	{
