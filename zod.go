@@ -1408,7 +1408,12 @@ func renderChain(v stringValidator) string {
 	case "_custom":
 		return v.arg
 	default:
-		panic(fmt.Sprintf("renderChain: unhandled format tag %q", v.tag))
+		// Format/union tags (email, url, ip, etc.) are handled by
+		// renderV3Chain or renderV4FormatBase, not here.
+		if !formatTags[v.tag] && !unionTags[v.tag] {
+			panic(fmt.Sprintf("renderChain: unhandled tag %q", v.tag))
+		}
+		return ""
 	}
 }
 
