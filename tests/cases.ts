@@ -1016,6 +1016,64 @@ export const cases: TestCase[] = [
 		success: false,
 	},
 
+	// --- TestOmitZero ---
+	{
+		name: "omitzero: accepts all fields present",
+		golden: "TestOmitZero.golden",
+		schema: "PayloadSchema",
+		input: { Name: "alice", Nickname: "ally", Email: "a@b.com" },
+		success: true,
+	},
+	{
+		name: "omitzero: accepts omitzero fields missing",
+		golden: "TestOmitZero.golden",
+		schema: "PayloadSchema",
+		input: { Name: "alice" },
+		success: true,
+	},
+	{
+		name: "omitzero: rejects required field missing",
+		golden: "TestOmitZero.golden",
+		schema: "PayloadSchema",
+		input: { Nickname: "ally" },
+		success: false,
+	},
+
+	// --- TestZodV4Defaults/custom_tag_before_required_base64_preserves_min(1) ---
+	{
+		name: "base64 with trim and required: accepts valid base64",
+		golden:
+			"TestZodV4Defaults/custom_tag_before_required_base64_preserves_min(1).golden",
+		schema: "PayloadSchema",
+		input: { Data: "aGVsbG8=", Hex: "deadbeef" },
+		success: true,
+	},
+	{
+		name: "base64 with trim: trims whitespace before validating",
+		golden:
+			"TestZodV4Defaults/custom_tag_before_required_base64_preserves_min(1).golden",
+		schema: "PayloadSchema",
+		input: { Data: "  aGVsbG8=  ", Hex: "  deadbeef  " },
+		output: { Data: "aGVsbG8=", Hex: "deadbeef" },
+		success: true,
+	},
+	{
+		name: "base64 with trim and required: rejects empty string",
+		golden:
+			"TestZodV4Defaults/custom_tag_before_required_base64_preserves_min(1).golden",
+		schema: "PayloadSchema",
+		input: { Data: "", Hex: "deadbeef" },
+		success: false,
+	},
+	{
+		name: "hex with trim and required: rejects empty string",
+		golden:
+			"TestZodV4Defaults/custom_tag_before_required_base64_preserves_min(1).golden",
+		schema: "PayloadSchema",
+		input: { Data: "aGVsbG8=", Hex: "" },
+		success: false,
+	},
+
 	// --- lenSchema ---
 	{
 		name: "string len: accepts string of length 5",

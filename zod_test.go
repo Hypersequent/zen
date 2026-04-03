@@ -296,6 +296,15 @@ func TestStringOptionalNullable(t *testing.T) {
 	assertSchema(t, User{})
 }
 
+func TestOmitZero(t *testing.T) {
+	type Payload struct {
+		Name     string
+		Nickname string  `json:",omitzero"`
+		Email    *string `json:",omitzero"`
+	}
+	assertSchema(t, Payload{})
+}
+
 func TestStringArrayNullable(t *testing.T) {
 	type User struct {
 		Name string
@@ -519,6 +528,21 @@ func TestZodV4Defaults(t *testing.T) {
 		type Payload struct {
 			TrimmedThenEmail string `validate:"trim,email"`
 			EmailThenTrimmed string `validate:"email,trim"`
+		}
+
+		customTagHandlers := map[string]CustomFn{
+			"trim": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return ".trim()"
+			},
+		}
+
+		goldenAssert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})), withGoldenZodVersion("v4"))
+	})
+
+	t.Run("custom tag before required base64 preserves min(1)", func(t *testing.T) {
+		type Payload struct {
+			Data string `validate:"trim,required,base64"`
+			Hex  string `validate:"trim,required,hexadecimal"`
 		}
 
 		customTagHandlers := map[string]CustomFn{
