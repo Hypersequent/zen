@@ -545,7 +545,7 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 		}
 
 		for _, part := range parts {
-			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 			if done {
 				continue
 			}
@@ -581,7 +581,7 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 		case "string":
 			return convertResult{text: c.validateString(validate)}
 		case "number":
-			validateStr = c.validateNumber(validate)
+			validateStr = c.validateNumber(validate, t)
 		}
 	}
 
@@ -738,7 +738,7 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 
 forParts:
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -838,7 +838,7 @@ func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 		case "string":
 			return c.validateString(validate)
 		case "number":
-			validateStr = c.validateNumber(validate)
+			validateStr = c.validateNumber(validate, t)
 		}
 	}
 
@@ -858,7 +858,7 @@ func (c *Converter) convertMap(t reflect.Type, validate string, indent int) stri
 
 forParts:
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -1002,13 +1002,13 @@ func (c *Converter) checkIsIgnored(part string) bool {
 
 // not implementing omitempty for numbers and strings
 // could support unusual cases like `validate:"omitempty,min=3,max=5"`
-func (c *Converter) validateNumber(validate string) string {
+func (c *Converter) validateNumber(validate string, t reflect.Type) string {
 	var validateStr strings.Builder
 	var refines []string
 	parts := strings.Split(validate, ",")
 
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -1526,16 +1526,14 @@ func (c *Converter) parseValidationTagPart(part string) (string, string, bool) {
 	return valName, valValue, false
 }
 
-func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder, t reflect.Type) (string, string, bool) {
 	valName, valValue, done := c.parseValidationTagPart(part)
 	if done {
 		return "", "", true
 	}
 
 	if h, ok := c.customTags[valName]; ok {
-		// The type parameter is string since this is a string validation context.
-		// Custom tag handlers may inspect it to vary their output by field type.
-		v := h(c, reflect.TypeOf(""), valValue, 0)
+		v := h(c, t, valValue, 0)
 		if strings.HasPrefix(v, ".refine") {
 			*refines = append(*refines, v)
 		} else {

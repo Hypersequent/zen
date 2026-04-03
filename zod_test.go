@@ -1256,6 +1256,41 @@ func TestCustomTag(t *testing.T) {
 	})
 }
 
+func TestCustomTagReceivesCorrectType(t *testing.T) {
+	// A "nonzero" custom tag that emits different validation depending on the
+	// field type: strings check for non-empty, numbers check for non-zero,
+	// time.Time checks for non-zero date.
+	handler := map[string]CustomFn{
+		"nonzero": func(c *Converter, t reflect.Type, validate string, i int) string {
+			switch t.Kind() {
+			case reflect.String:
+				return `.refine((val) => val !== "", "must not be empty")`
+			case reflect.Int, reflect.Float64:
+				return ".refine((val) => val !== 0, \"must not be zero\")"
+			case reflect.Struct:
+				if t.Name() == "Time" {
+					return ".refine((val) => val.getTime() !== 0, \"must not be zero time\")"
+				}
+				return ".refine((val) => true)"
+			default:
+				return ".refine((val) => true)"
+			}
+		},
+	}
+
+	type Payload struct {
+		Name string    `json:"name" validate:"nonzero"`
+		Age  int       `json:"age" validate:"nonzero"`
+		When time.Time `json:"when" validate:"nonzero"`
+	}
+
+	output := NewConverterWithOpts(WithCustomTags(handler)).Convert(Payload{})
+
+	assert.Contains(t, output, `val !== ""`, "string field should get string-specific check")
+	assert.Contains(t, output, `val !== 0, "must not be zero"`, "number field should get number-specific check")
+	assert.Contains(t, output, `val.getTime() !== 0`, "time field should get time-specific check")
+}
+
 func TestRecursiveEmbeddedStruct(t *testing.T) {
 	type ItemA struct {
 		Name     string
