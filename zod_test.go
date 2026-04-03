@@ -432,6 +432,26 @@ func TestStringValidations(t *testing.T) {
 		assert.Equal(t, `a\"b\\c`, escapeJSString(`a"b\c`))
 		assert.Equal(t, `no change`, escapeJSString(`no change`))
 	})
+
+	t.Run("special chars in tag values are escaped in output", func(t *testing.T) {
+		// Go struct tag syntax can't contain raw quotes, but reflect.StructOf can.
+		// This tests that the generated JS output correctly escapes them.
+		c := NewConverterWithOpts()
+
+		contains := reflect.StructOf([]reflect.StructField{{
+			Name: "Value", Type: reflect.TypeOf(""),
+			Tag: reflect.StructTag(`validate:"contains=foo\"bar" json:"value"`),
+		}})
+		c.AddTypeWithName(reflect.New(contains).Elem().Interface(), "ContainsQuote")
+
+		eq := reflect.StructOf([]reflect.StructField{{
+			Name: "Value", Type: reflect.TypeOf(""),
+			Tag: reflect.StructTag(`validate:"eq=a\\b" json:"value"`),
+		}})
+		c.AddTypeWithName(reflect.New(eq).Elem().Interface(), "EqBackslash")
+
+		goldenAssert(t, []byte(c.Export()))
+	})
 }
 
 func TestZodV4Defaults(t *testing.T) {
