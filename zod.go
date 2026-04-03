@@ -1408,7 +1408,7 @@ func renderChain(v stringValidator) string {
 	case "_custom":
 		return v.arg
 	default:
-		return ""
+		panic(fmt.Sprintf("renderChain: unhandled format tag %q", v.tag))
 	}
 }
 
