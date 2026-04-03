@@ -12,7 +12,14 @@ lint: linters-install
 test:
 	$(GOCMD) test -cover -race ./...
 
+test-update:
+	GOLDEN_UPDATE=true $(GOCMD) test ./...
+
+
+docker-test:
+	./docker-test.sh
+
 bench:
 	$(GOCMD) test -bench=. -benchmem ./...
 
-.PHONY: test lint linters-install
+.PHONY: test test-update lint linters-install docker-test bench

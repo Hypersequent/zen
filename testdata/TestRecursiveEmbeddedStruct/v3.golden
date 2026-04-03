@@ -1,0 +1,41 @@
+// @zod-version: v3
+// @typecheck
+export type ItemA = {
+  Name: string,
+  Children: ItemA[] | null,
+}
+const ItemASchemaShape = {
+  Name: z.string(),
+  Children: z.lazy(() => ItemASchema).array().nullable(),
+}
+export const ItemASchema: z.ZodType<ItemA> = z.object(ItemASchemaShape)
+
+export const ItemBSchema = z.object({
+  ...ItemASchemaShape,
+})
+export type ItemB = z.infer<typeof ItemBSchema>
+
+export const ItemCSchema = z.object({
+}).merge(ItemBSchema)
+export type ItemC = z.infer<typeof ItemCSchema>
+
+export const ItemDSchema = z.object({
+  ItemA: ItemASchema,
+})
+export type ItemD = z.infer<typeof ItemDSchema>
+
+export type ItemE = Omit<ItemA, 'Children'> & ItemD & {
+  Children: ItemE[] | null,
+}
+const ItemESchemaShape = {
+  ...ItemASchemaShape,
+  ...ItemDSchema.shape,
+  Children: z.lazy(() => ItemESchema).array().nullable(),
+}
+export const ItemESchema: z.ZodType<ItemE> = z.object(ItemESchemaShape)
+
+export const ItemFSchema = z.object({
+  ...ItemESchemaShape,
+})
+export type ItemF = z.infer<typeof ItemFSchema>
+

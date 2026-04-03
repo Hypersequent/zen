@@ -1,0 +1,6 @@
+// @typecheck
+export const dive_oneofSchema = z.object({
+  value: z.enum(["a", "b", "c"] as const).array().nullable(),
+})
+export type dive_oneof = z.infer<typeof dive_oneofSchema>
+

@@ -1,0 +1,26 @@
+// @typecheck
+export const RequiredOneofSchema = z.object({
+  v: z.enum(["a", "b"] as const),
+})
+export type RequiredOneof = z.infer<typeof RequiredOneofSchema>
+
+export const OneofContainsSchema = z.object({
+  v: z.enum(["a", "b"] as const),
+})
+export type OneofContains = z.infer<typeof OneofContainsSchema>
+
+export const OneofStartswithSchema = z.object({
+  v: z.enum(["a", "b"] as const),
+})
+export type OneofStartswith = z.infer<typeof OneofStartswithSchema>
+
+export const OneofEndswithSchema = z.object({
+  v: z.enum(["a", "b"] as const),
+})
+export type OneofEndswith = z.infer<typeof OneofEndswithSchema>
+
+export const OneofIpSchema = z.object({
+  v: z.enum(["127.0.0.1", "::1"] as const),
+})
+export type OneofIp = z.infer<typeof OneofIpSchema>
+

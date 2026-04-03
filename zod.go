@@ -1,6 +1,7 @@
 package zen
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -49,6 +50,13 @@ func WithIgnoreTags(ignores ...string) Opt {
 	}
 }
 
+// Emits legacy Zod v3-compatible schemas instead of the default Zod v4 output.
+func WithZodV3() Opt {
+	return func(c *Converter) {
+		c.zodV3 = true
+	}
+}
+
 // NewConverterWithOpts initializes and returns a new converter instance.
 func NewConverterWithOpts(opts ...Opt) *Converter {
 	c := &Converter{
@@ -74,21 +82,29 @@ func NewConverter(customTypes map[string]CustomFn) Converter {
 	return *NewConverterWithOpts(WithCustomTypes(customTypes))
 }
 
+// AddTypeWithName converts a struct type to corresponding zod schema using a custom name
+// instead of the struct's type name. Useful for anonymous structs from reflect.StructOf.
+func (c *Converter) AddTypeWithName(input interface{}, name string) {
+	c.addType(reflect.TypeOf(input), name)
+}
+
 // AddType converts a struct type to corresponding zod schema. AddType can be called
 // multiple times, followed by Export to get the corresponding zod schemas.
 func (c *Converter) AddType(input interface{}) {
 	t := reflect.TypeOf(input)
+	c.addType(t, typeName(t))
+}
 
+func (c *Converter) addType(t reflect.Type, name string) {
 	if t.Kind() != reflect.Struct {
 		panic("input must be a struct")
 	}
 
-	name := typeName(t)
 	if _, ok := c.outputs[name]; ok {
 		return
 	}
 
-	data, selfRef := c.convertStructTopLevel(t)
+	data, selfRef := c.convertStructTopLevel(t, name)
 	c.addSchema(name, data, selfRef)
 }
 
@@ -159,11 +175,17 @@ type meta struct {
 	selfRef bool
 }
 
+type stringValidator struct {
+	tag string // "email", "ip", "required", "trim", "max", "_custom", etc.
+	arg string // "45" for max=45, raw text for _custom
+}
+
 type Converter struct {
 	prefix      string
 	customTypes map[string]CustomFn
 	customTags  map[string]CustomFn
 	ignoreTags  []string
+	zodV3       bool
 	structs     int
 	outputs     map[string]entry
 	stack       []meta
@@ -240,10 +262,9 @@ func typeName(t reflect.Type) string {
 	return "UNKNOWN"
 }
 
-func (c *Converter) convertStructTopLevel(t reflect.Type) (string, bool) {
+func (c *Converter) convertStructTopLevel(t reflect.Type, name string) (string, bool) {
 	output := strings.Builder{}
 
-	name := typeName(t)
 	c.stack = append(c.stack, meta{name, false})
 
 	data := c.convertStruct(t, 0)
@@ -288,12 +309,10 @@ func (c *Converter) getStructShape(input reflect.Type, indent int) string {
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
-
-		if !shouldMerge {
-			output.WriteString(line)
+		if field.Anonymous {
+			output.WriteString(c.convertEmbeddedFieldSpread(field, indent+1))
 		} else {
-			output.WriteString(fmt.Sprintf("%s...%s.shape,\n", indentation(indent+1), schemaName(c.prefix, typeName(field.Type))))
+			output.WriteString(c.convertNamedField(field, indent+1, optional, nullable))
 		}
 	}
 
@@ -310,6 +329,8 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 `)
 
 	merges := []string{}
+	embeddedFields := []string{}
+	namedFields := []string{}
 
 	fields := input.NumField()
 	for i := 0; i < fields; i++ {
@@ -317,13 +338,33 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
-		line, shouldMerge := c.convertField(field, indent+1, optional, nullable)
-
-		if !shouldMerge {
-			output.WriteString(line)
+		if field.Anonymous {
+			if c.zodV3 {
+				line, shouldMerge := c.convertEmbeddedFieldMerge(field, indent+1)
+				if shouldMerge {
+					merges = append(merges, line)
+				} else {
+					output.WriteString(line)
+				}
+			} else {
+				embeddedFields = append(embeddedFields, c.convertEmbeddedFieldSpread(field, indent+1))
+			}
 		} else {
-			merges = append(merges, line)
+			namedFields = append(namedFields, c.convertNamedField(field, indent+1, optional, nullable))
 		}
+	}
+
+	// In v4, embedded spreads are written before named fields so that named
+	// fields override embedded ones (last key wins in JS object literals).
+	// This matches Go's shadowing semantics where the outer struct's field
+	// takes precedence over the embedded struct's field.
+	if !c.zodV3 {
+		for _, line := range embeddedFields {
+			output.WriteString(line)
+		}
+	}
+	for _, line := range namedFields {
+		output.WriteString(line)
 	}
 
 	output.WriteString(indentation(indent))
@@ -345,7 +386,18 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 
 	merges := []string{}
 
+	// Collect own (non-anonymous) field names to detect shadowing.
 	fields := input.NumField()
+	ownFieldNames := map[string]bool{}
+	for i := 0; i < fields; i++ {
+		f := input.Field(i)
+		if !f.Anonymous {
+			if name := fieldName(f); name != "-" {
+				ownFieldNames[name] = true
+			}
+		}
+	}
+
 	for i := 0; i < fields; i++ {
 		field := input.Field(i)
 		optional := isOptional(field)
@@ -356,6 +408,27 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 		if !shouldMerge {
 			output.WriteString(line)
 		} else {
+			// When own fields shadow embedded fields, wrap in Omit<> so the
+			// TypeScript intersection doesn't produce conflicting property types.
+			embeddedType := field.Type
+			if embeddedType.Kind() == reflect.Ptr {
+				embeddedType = embeddedType.Elem()
+			}
+			var shadowedKeys []string
+			if embeddedType.Kind() == reflect.Struct {
+				for j := 0; j < embeddedType.NumField(); j++ {
+					if name := fieldName(embeddedType.Field(j)); name != "-" && ownFieldNames[name] {
+						shadowedKeys = append(shadowedKeys, name)
+					}
+				}
+			}
+			if len(shadowedKeys) > 0 {
+				quoted := make([]string, len(shadowedKeys))
+				for k, key := range shadowedKeys {
+					quoted[k] = fmt.Sprintf("'%s'", key)
+				}
+				line = fmt.Sprintf("Omit<%s, %s>", line, strings.Join(quoted, " | "))
+			}
 			merges = append(merges, line)
 		}
 	}
@@ -408,19 +481,28 @@ func (c *Converter) handleCustomType(t reflect.Type, validate string, indent int
 	return "", false
 }
 
+type convertResult struct {
+	text    string
+	selfRef bool
+}
+
 // ConvertType should be called from custom converter functions.
 func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) string {
+	return c.convertType(t, validate, indent).text
+}
+
+func (c *Converter) convertType(t reflect.Type, validate string, indent int) convertResult {
 	if t.Kind() == reflect.Ptr {
 		inner := t.Elem()
 		validate = strings.TrimPrefix(validate, "omitempty")
 		validate = strings.TrimPrefix(validate, ",")
-		return c.ConvertType(inner, validate, indent)
+		return c.convertType(inner, validate, indent)
 	}
 
 	// Custom types should be handled before maps/slices, as we might have
 	// custom types that are maps/slices.
 	if custom, ok := c.handleCustomType(t, validate, indent); ok {
-		return custom
+		return convertResult{text: custom}
 	}
 
 	if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
@@ -428,12 +510,13 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	}
 
 	if t.Kind() == reflect.Map {
-		return c.convertMap(t, validate, indent)
+		return convertResult{text: c.convertMap(t, validate, indent)}
 	}
 
 	if t.Kind() == reflect.Struct {
 		var validateStr strings.Builder
 		var refines []string
+		var selfRef bool
 		name := typeName(t)
 		parts := strings.Split(validate, ",")
 
@@ -446,18 +529,23 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 		} else {
 			if c.stack[len(c.stack)-1].name == name {
 				c.stack[len(c.stack)-1].selfRef = true
-				validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+				if c.zodV3 {
+					validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+				} else {
+					selfRef = true
+					validateStr.WriteString(schemaName(c.prefix, name))
+				}
 			} else {
 				// throws panic if there is a cycle
 				detectCycle(name, c.stack)
-				data, selfRef := c.convertStructTopLevel(t)
-				c.addSchema(name, data, selfRef)
+				data, sRef := c.convertStructTopLevel(t, name)
+				c.addSchema(name, data, sRef)
 				validateStr.WriteString(schemaName(c.prefix, name))
 			}
 		}
 
 		for _, part := range parts {
-			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+			valName, _, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 			if done {
 				continue
 			}
@@ -477,7 +565,8 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 			validateStr.WriteString(refine)
 		}
 
-		return validateStr.String()
+		schema := validateStr.String()
+		return convertResult{text: schema, selfRef: selfRef}
 	}
 
 	// boolean, number, string, any
@@ -490,16 +579,13 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 	if validate != "" {
 		switch zodType {
 		case "string":
-			validateStr = c.validateString(validate)
-			if strings.Contains(validateStr, ".enum(") {
-				return "z" + validateStr
-			}
+			return convertResult{text: c.validateString(validate)}
 		case "number":
-			validateStr = c.validateNumber(validate)
+			validateStr = c.validateNumber(validate, t)
 		}
 	}
 
-	return fmt.Sprintf("z.%s()%s", zodType, validateStr)
+	return convertResult{text: fmt.Sprintf("z.%s()%s", zodType, validateStr)}
 }
 
 func (c *Converter) getType(t reflect.Type, indent int) string {
@@ -538,12 +624,12 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 	return zodType
 }
 
-func (c *Converter) convertField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
+func (c *Converter) convertNamedField(f reflect.StructField, indent int, optional, nullable bool) string {
 	name := fieldName(f)
 
 	// fields named `-` are not exported to JSON so don't export zod types
 	if name == "-" {
-		return "", false
+		return ""
 	}
 
 	// because nullability is processed before custom types, this makes sure
@@ -560,25 +646,49 @@ func (c *Converter) convertField(f reflect.StructField, indent int, optional, nu
 		nullableCall = ".nullable()"
 	}
 
-	t := c.ConvertType(f.Type, f.Tag.Get("validate"), indent)
-	if !f.Anonymous {
+	res := c.convertType(f.Type, f.Tag.Get("validate"), indent)
+
+	if res.selfRef && !c.zodV3 {
 		return fmt.Sprintf(
-			"%s%s: %s%s%s,\n",
+			"%sget %s() { return %s%s%s; },\n",
 			indentation(indent),
 			name,
-			t,
+			res.text,
 			optionalCall,
-			nullableCall), false
-	} else {
-		typeName := typeName(f.Type)
-		entry, ok := c.outputs[typeName]
-		if ok && entry.selfRef {
-			// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
-			return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName)), false
-		}
-
-		return fmt.Sprintf(".merge(%s)", t), true
+			nullableCall)
 	}
+
+	return fmt.Sprintf(
+		"%s%s: %s%s%s,\n",
+		indentation(indent),
+		name,
+		res.text,
+		optionalCall,
+		nullableCall)
+}
+
+func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
+	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
+	name := typeName(f.Type)
+	entry, ok := c.outputs[name]
+	if ok && entry.selfRef {
+		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
+		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, name)), false
+	}
+
+	return fmt.Sprintf(".merge(%s)", t), true
+}
+
+func (c *Converter) convertEmbeddedFieldSpread(f reflect.StructField, indent int) string {
+	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
+	typeName := typeName(f.Type)
+	entry, ok := c.outputs[typeName]
+	if ok && entry.selfRef {
+		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
+		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName))
+	}
+
+	return fmt.Sprintf("%s...%s.shape,\n", indentation(indent), t)
 }
 
 func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nullable bool) (string, bool) {
@@ -619,7 +729,7 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 	return typeName(f.Type), true
 }
 
-func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) string {
+func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) convertResult {
 	var validateStr strings.Builder
 	var refines []string
 	validateCurrent := getValidateCurrent(validate)
@@ -628,7 +738,7 @@ func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent
 
 forParts:
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -639,30 +749,37 @@ forParts:
 			if valValue != "" {
 				switch valName {
 				case "min":
+					requireIntArg("min", valValue)
 					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
 				case "max":
+					requireIntArg("max", valValue)
 					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
 				case "len":
+					requireIntArg("len", valValue)
 					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
 				case "eq":
+					requireIntArg("eq", valValue)
 					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
 				case "ne":
+					requireIntArg("ne", valValue)
 					refines = append(refines, fmt.Sprintf(".refine((val) => val.length !== %s)", valValue))
 				case "gt":
-					val, err := strconv.Atoi(valValue)
-					if err != nil || val < 0 {
+					val := requireIntArg("gt", valValue)
+					if val < 0 {
 						panic(fmt.Sprintf("invalid gt value: %s", valValue))
 					}
 					validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
 				case "gte":
+					requireIntArg("gte", valValue)
 					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
 				case "lt":
-					val, err := strconv.Atoi(valValue)
-					if err != nil || val <= 0 {
+					val := requireIntArg("lt", valValue)
+					if val <= 0 {
 						panic(fmt.Sprintf("invalid lt value: %s", valValue))
 					}
 					validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
 				case "lte":
+					requireIntArg("lte", valValue)
 					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
 
 				default:
@@ -690,9 +807,11 @@ forParts:
 		validateStr.WriteString(refine)
 	}
 
-	return fmt.Sprintf(
-		"%s.array()%s",
-		c.ConvertType(t.Elem(), getValidateAfterDive(validate), indent), validateStr.String())
+	elemResult := c.convertType(t.Elem(), getValidateAfterDive(validate), indent)
+	return convertResult{
+		text:    fmt.Sprintf("%s.array()%s", elemResult.text, validateStr.String()),
+		selfRef: elemResult.selfRef,
+	}
 }
 
 func (c *Converter) getTypeSliceAndArray(t reflect.Type, indent int) string {
@@ -703,7 +822,8 @@ func (c *Converter) getTypeSliceAndArray(t reflect.Type, indent int) string {
 
 func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 	if t.Name() == "Time" {
-		return "z.coerce.date()"
+		// JSON serializes time.Time map keys as RFC3339 strings via TextMarshaler.
+		return "z.string()"
 	}
 
 	// boolean, number, string, any
@@ -716,12 +836,9 @@ func (c *Converter) convertKeyType(t reflect.Type, validate string) string {
 	if validate != "" {
 		switch zodType {
 		case "string":
-			validateStr = c.validateString(validate)
-			if strings.Contains(validateStr, ".enum(") {
-				return "z" + validateStr
-			}
+			return c.validateString(validate)
 		case "number":
-			validateStr = c.validateNumber(validate)
+			validateStr = c.validateNumber(validate, t)
 		}
 	}
 
@@ -741,7 +858,7 @@ func (c *Converter) convertMap(t reflect.Type, validate string, indent int) stri
 
 forParts:
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -749,22 +866,31 @@ forParts:
 		if valValue != "" {
 			switch valName {
 			case "min":
+				requireIntArg("min", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
 			case "max":
+				requireIntArg("max", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
 			case "len":
+				requireIntArg("len", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
 			case "eq":
+				requireIntArg("eq", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length === %s, 'Map wrong size')", valValue))
 			case "ne":
+				requireIntArg("ne", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length !== %s, 'Map wrong size')", valValue))
 			case "gt":
+				requireIntArg("gt", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length > %s, 'Map too small')", valValue))
 			case "gte":
+				requireIntArg("gte", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length >= %s, 'Map too small')", valValue))
 			case "lt":
+				requireIntArg("lt", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length < %s, 'Map too large')", valValue))
 			case "lte":
+				requireIntArg("lte", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => Object.keys(val).length <= %s, 'Map too large')", valValue))
 
 			default:
@@ -787,8 +913,15 @@ forParts:
 		validateStr.WriteString(refine)
 	}
 
-	return fmt.Sprintf(`z.record(%s, %s)%s`,
-		c.convertKeyType(t.Key(), getValidateKeys(validate)),
+	keySchema := c.convertKeyType(t.Key(), getValidateKeys(validate))
+	recordFn := "z.record"
+	if !c.zodV3 && isPartialRecordKeySchema(keySchema) {
+		recordFn = "z.partialRecord"
+	}
+
+	return fmt.Sprintf(`%s(%s, %s)%s`,
+		recordFn,
+		keySchema,
 		c.ConvertType(t.Elem(), getValidateValues(validate), indent),
 		validateStr.String())
 }
@@ -838,7 +971,11 @@ func getValidateValues(validate string) string {
 	var validateValues string
 
 	if strings.Contains(validate, "dive,keys") {
-		removedPrefix := strings.SplitN(validate, ",endkeys", 2)[1]
+		parts := strings.SplitN(validate, ",endkeys", 2)
+		if len(parts) < 2 {
+			panic("malformed validation: 'dive,keys' without matching 'endkeys'")
+		}
+		removedPrefix := parts[1]
 
 		if strings.Contains(removedPrefix, ",dive") {
 			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
@@ -847,7 +984,11 @@ func getValidateValues(validate string) string {
 		}
 		validateValues = strings.TrimPrefix(validateValues, ",")
 	} else if strings.Contains(validate, "dive") {
-		removedPrefix := strings.SplitN(validate, "dive,", 2)[1]
+		parts := strings.SplitN(validate, "dive,", 2)
+		if len(parts) < 2 {
+			return ""
+		}
+		removedPrefix := parts[1]
 		if strings.Contains(removedPrefix, ",dive") {
 			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
 		} else {
@@ -869,13 +1010,13 @@ func (c *Converter) checkIsIgnored(part string) bool {
 
 // not implementing omitempty for numbers and strings
 // could support unusual cases like `validate:"omitempty,min=3,max=5"`
-func (c *Converter) validateNumber(validate string) string {
+func (c *Converter) validateNumber(validate string, t reflect.Type) string {
 	var validateStr strings.Builder
 	var refines []string
 	parts := strings.Split(validate, ",")
 
 	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
+		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
 		}
@@ -883,21 +1024,30 @@ func (c *Converter) validateNumber(validate string) string {
 		if valValue != "" {
 			switch valName {
 			case "gt":
+				requireNumericArg("gt", valValue)
 				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
 			case "gte", "min":
+				requireNumericArg(valName, valValue)
 				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
 			case "lt":
+				requireNumericArg("lt", valValue)
 				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
 			case "lte", "max":
+				requireNumericArg(valName, valValue)
 				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
 			case "eq", "len":
+				requireNumericArg(valName, valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => val === %s)", valValue))
 			case "ne":
+				requireNumericArg("ne", valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => val !== %s)", valValue))
 			case "oneof":
 				vals := strings.Fields(valValue)
 				if len(vals) == 0 {
 					panic(fmt.Sprintf("invalid oneof validation: %s", part))
+				}
+				for _, v := range vals {
+					requireNumericArg("oneof", v)
 				}
 				refines = append(refines, fmt.Sprintf(".refine((val) => [%s].includes(val))", strings.Join(vals, ", ")))
 
@@ -923,183 +1073,441 @@ func (c *Converter) validateNumber(validate string) string {
 	return validateStr.String()
 }
 
+// Tag classification sets for string validators.
+var formatTags = map[string]bool{
+	"email": true, "url": true, "http_url": true,
+	"ipv4": true, "ip4_addr": true, "ipv6": true, "ip6_addr": true,
+	"base64": true, "datetime": true, "hexadecimal": true, "jwt": true,
+	"uuid": true, "uuid3": true, "uuid3_rfc4122": true,
+	"uuid4": true, "uuid4_rfc4122": true,
+	"uuid5": true, "uuid5_rfc4122": true,
+	"uuid_rfc4122": true,
+	"md5":          true, "sha256": true, "sha384": true, "sha512": true,
+}
+
+var unionTags = map[string]bool{
+	"ip": true, "ip_addr": true,
+}
+
+// Tags where generated Zod schemas accepts an empty string
+// unless `.min(1)` is added.
+var v4AcceptsEmpty = map[string]bool{
+	"base64": true, "hexadecimal": true,
+}
+
 func (c *Converter) validateString(validate string) string {
-	var validateStr strings.Builder
-	var refines []string
+	validators := c.parseStringValidators(validate)
+	return c.renderStringSchema(validators)
+}
+
+var knownStringTags = map[string]bool{
+	"required": true, "email": true, "url": true, "http_url": true,
+	"ipv4": true, "ip4_addr": true, "ipv6": true, "ip6_addr": true,
+	"ip": true, "ip_addr": true,
+	"url_encoded": true, "alpha": true, "alphanum": true,
+	"alphanumunicode": true, "alphaunicode": true, "ascii": true,
+	"lowercase": true, "number": true, "numeric": true, "uppercase": true,
+	"base64": true, "mongodb": true, "datetime": true, "hexadecimal": true,
+	"json": true, "jwt": true, "latitude": true, "longitude": true,
+	"uuid": true, "uuid3": true, "uuid3_rfc4122": true,
+	"uuid4": true, "uuid4_rfc4122": true,
+	"uuid5": true, "uuid5_rfc4122": true, "uuid_rfc4122": true,
+	"md4": true, "md5": true, "sha256": true, "sha384": true, "sha512": true,
+	"contains": true, "endswith": true, "startswith": true,
+	"eq": true, "ne": true, "len": true, "min": true, "max": true,
+	"gt": true, "gte": true, "lt": true, "lte": true,
+}
+
+func (c *Converter) parseStringValidators(validate string) []stringValidator {
+	var validators []stringValidator
 	parts := strings.Split(validate, ",")
 
-	for _, part := range parts {
-		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr)
-		if done {
+	for _, rawPart := range parts {
+		valName, valValue, skip := c.parseValidationTagPart(rawPart)
+		if skip {
 			continue
 		}
 
-		if valValue != "" {
-			switch valName {
-			case "oneof":
-				vals := splitParamsRegex.FindAllString(part[6:], -1)
-				for i := 0; i < len(vals); i++ {
-					vals[i] = strings.Replace(vals[i], "'", "", -1)
-				}
-				if len(vals) == 0 {
-					panic("oneof= must be followed by a list of values")
-				}
-				// const FishEnum = z.enum(["Salmon", "Tuna", "Trout"]);
-				validateStr.WriteString(fmt.Sprintf(".enum([\"%s\"] as const)", strings.Join(vals, "\", \"")))
-			case "len":
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", valValue, valValue))
-			case "min":
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", valValue, valValue))
-			case "max":
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", valValue, valValue))
-			case "gt":
-				val, err := strconv.Atoi(valValue)
-				if err != nil {
-					panic("gt= must be followed by a number")
-				}
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1))
-			case "gte":
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", valValue, valValue))
-			case "lt":
-				val, err := strconv.Atoi(valValue)
-				if err != nil {
-					panic("lt= must be followed by a number")
-				}
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1))
-			case "lte":
-				refines = append(refines, fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", valValue, valValue))
-			case "contains":
-				validateStr.WriteString(fmt.Sprintf(".includes(\"%s\")", valValue))
-			case "endswith":
-				validateStr.WriteString(fmt.Sprintf(".endsWith(\"%s\")", valValue))
-			case "startswith":
-				validateStr.WriteString(fmt.Sprintf(".startsWith(\"%s\")", valValue))
-			case "eq":
-				refines = append(refines, fmt.Sprintf(".refine((val) => val === \"%s\")", valValue))
-			case "ne":
-				refines = append(refines, fmt.Sprintf(".refine((val) => val !== \"%s\")", valValue))
+		if h, ok := c.customTags[valName]; ok {
+			// The type parameter is string since this is a string validation context.
+			// Custom tag handlers may inspect it to vary their output by field type.
+			v := h(c, reflect.TypeOf(""), valValue, 0)
+			validators = append(validators, stringValidator{tag: "_custom", arg: v})
+			continue
+		}
 
-			default:
-				panic(fmt.Sprintf("unknown validation: %s", part))
+		switch {
+		case valName == "omitempty":
+			// skip
+		case valName == "oneof" && valValue != "":
+			vals := splitParamsRegex.FindAllString(rawPart[len("oneof="):], -1)
+			for i := 0; i < len(vals); i++ {
+				vals[i] = escapeJSString(strings.ReplaceAll(vals[i], "'", ""))
 			}
-		} else {
-			switch part {
-			case "omitempty":
-			case "required":
-				validateStr.WriteString(".min(1)")
-			case "email":
-				// email is more readable than copying the regex in regexes.go but could be incompatible
-				// Also there is an open issue https://github.com/go-playground/validator/issues/517
-				// https://github.com/puellanivis/pedantic-regexps/blob/master/email.go
-				// solution is there in the comments but not implemented yet
-				validateStr.WriteString(".email()")
-			case "url":
-				// url is more readable than copying the regex in regexes.go but could be incompatible
-				validateStr.WriteString(".url()")
-			case "ipv4":
-				validateStr.WriteString(".ip({ version: \"v4\" })")
-			case "ip4_addr":
-				validateStr.WriteString(".ip({ version: \"v4\" })")
-			case "ipv6":
-				validateStr.WriteString(".ip({ version: \"v6\" })")
-			case "ip6_addr":
-				validateStr.WriteString(".ip({ version: \"v6\" })")
-			case "ip":
-				validateStr.WriteString(".ip()")
-			case "ip_addr":
-				validateStr.WriteString(".ip()")
-			case "http_url":
-				// url is more readable than copying the regex in regexes.go but could be incompatible
-				validateStr.WriteString(".url()")
-			case "url_encoded":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uRLEncodedRegexString))
-			case "alpha":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaRegexString))
-			case "alphanum":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaNumericRegexString))
-			case "alphanumunicode":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeNumericRegexString))
-			case "alphaunicode":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", alphaUnicodeRegexString))
-			case "ascii":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", aSCIIRegexString))
-			case "boolean":
-				validateStr.WriteString(".enum(['true', 'false'])")
-			case "lowercase":
-				refines = append(refines, ".refine((val) => val === val.toLowerCase())")
-			case "number":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numberRegexString))
-			case "numeric":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", numericRegexString))
-			case "uppercase":
-				refines = append(refines, ".refine((val) => val === val.toUpperCase())")
-			case "base64":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", base64RegexString))
-			case "mongodb":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", mongodbRegexString))
-			case "datetime":
-				validateStr.WriteString(".datetime()")
-			case "hexadecimal":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", hexadecimalRegexString))
-			case "json":
-				// TODO: Better error messages with this
-				// const literalSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
-				//type Literal = z.infer<typeof literalSchema>;
-				//type Json = Literal | { [key: string]: Json } | Json[];
-				//const jsonSchema: z.ZodType<Json> = z.lazy(() =>
-				//  z.union([literalSchema, z.array(jsonSchema), z.record(jsonSchema)])
-				//);
-				//
-				//jsonSchema.parse(data);
+			enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
+			validators = append(validators, stringValidator{tag: "oneof", arg: enumText})
+		case valName == "boolean":
+			validators = append(validators, stringValidator{tag: "boolean", arg: `z.enum(["true", "false"] as const)`})
+		case knownStringTags[valName]:
+			validators = append(validators, stringValidator{tag: valName, arg: valValue})
+		default:
+			panic(fmt.Sprintf("unknown validation: %s", rawPart))
+		}
+	}
 
-				refines = append(refines, ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })")
-			case "jwt":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", jWTRegexString))
-			case "latitude":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", latitudeRegexString))
-			case "longitude":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", longitudeRegexString))
-			case "uuid":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRegexString))
-			case "uuid3":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RegexString))
-			case "uuid3_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID3RFC4122RegexString))
-			case "uuid4":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RegexString))
-			case "uuid4_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID4RFC4122RegexString))
-			case "uuid5":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RegexString))
-			case "uuid5_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUID5RFC4122RegexString))
-			case "uuid_rfc4122":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", uUIDRFC4122RegexString))
-			case "md4":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md4RegexString))
-			case "md5":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", md5RegexString))
-			case "sha256":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha256RegexString))
-			case "sha384":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha384RegexString))
-			case "sha512":
-				validateStr.WriteString(fmt.Sprintf(".regex(/%s/)", sha512RegexString))
+	return validators
+}
 
-			default:
-				panic(fmt.Sprintf("unknown validation: %s", part))
+func (c *Converter) renderStringSchema(validators []stringValidator) string {
+	// Phase 1: Classify validators
+	hasFormat := false
+	hasUnion := false
+	hasRequired := false
+	hasEnum := false
+	formatIdx := -1
+	formatCount := 0
+
+	for i, v := range validators {
+		if formatTags[v.tag] {
+			hasFormat = true
+			formatCount++
+			if formatIdx == -1 {
+				formatIdx = i
+			}
+		}
+		if unionTags[v.tag] {
+			hasUnion = true
+		}
+		if v.tag == "required" {
+			hasRequired = true
+		}
+		if v.tag == "oneof" || v.tag == "boolean" {
+			hasEnum = true
+		}
+	}
+
+	// Phase 2: Validate combinations
+	if hasFormat && hasUnion {
+		panic("cannot combine format validator with union validator (e.g. email + ip)")
+	}
+	if formatCount > 1 {
+		panic("cannot combine multiple format validators (e.g. email + url)")
+	}
+
+	// Phase 3: Handle enum — return early, other validators are redundant
+	if hasEnum {
+		for _, v := range validators {
+			if v.tag == "oneof" || v.tag == "boolean" {
+				return v.arg
 			}
 		}
 	}
 
-	for _, refine := range refines {
-		validateStr.WriteString(refine)
+	// Phase 4: Render v3
+	if c.zodV3 {
+		// Skip required when a format or union is present — format validators
+		// already reject empty strings in both v3 and v4.
+		skipRequired := hasFormat || hasUnion
+		var chain strings.Builder
+		for _, v := range validators {
+			if v.tag == "required" && skipRequired {
+				continue
+			}
+			chain.WriteString(c.renderV3Chain(v))
+		}
+		return "z.string()" + chain.String()
 	}
 
-	return validateStr.String()
+	// Phase 5: Render v4
+
+	// Case 1: Union (ip/ip_addr)
+	if hasUnion {
+		var armChain strings.Builder
+		for _, v := range validators {
+			if v.tag == "required" || unionTags[v.tag] {
+				continue
+			}
+			armChain.WriteString(renderChain(v))
+		}
+		ac := armChain.String()
+		return fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", ac, ac)
+	}
+
+	// Case 2: Format present
+	if hasFormat {
+		// Check if anything (non-required, non-omitempty) precedes the format
+		hasTransformBefore := false
+		for i := 0; i < formatIdx; i++ {
+			v := validators[i]
+			if v.tag != "required" && v.tag != "omitempty" {
+				hasTransformBefore = true
+				break
+			}
+		}
+
+		// Determine if required should be kept (base64/hex accept empty in v4)
+		keepRequired := hasRequired && v4AcceptsEmpty[validators[formatIdx].tag]
+
+		if hasTransformBefore {
+			// Fall back to z.string() + chains (format becomes a chain method via v3 form)
+			var chain strings.Builder
+			for _, v := range validators {
+				if v.tag == "required" && !keepRequired {
+					continue
+				}
+				if formatTags[v.tag] {
+					chain.WriteString(c.renderV3Chain(v))
+				} else {
+					chain.WriteString(renderChain(v))
+				}
+			}
+			return "z.string()" + chain.String()
+		}
+
+		// Format as base
+		base := c.renderV4FormatBase(validators[formatIdx])
+		var chain strings.Builder
+		if keepRequired {
+			chain.WriteString(".min(1)")
+		}
+		for i := formatIdx + 1; i < len(validators); i++ {
+			v := validators[i]
+			if v.tag == "required" && !keepRequired {
+				continue
+			}
+			chain.WriteString(renderChain(v))
+		}
+		return base + chain.String()
+	}
+
+	// Case 3: No format/union — plain string
+	var chain strings.Builder
+	for _, v := range validators {
+		chain.WriteString(renderChain(v))
+	}
+	return "z.string()" + chain.String()
 }
 
-func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder) (string, string, bool) {
+// escapeJSString escapes a string so it can be safely interpolated into a
+// JavaScript double-quoted string literal. Uses json.Marshal for complete
+// handling of quotes, backslashes, newlines, and control characters, then
+// strips the outer quotes.
+func escapeJSString(s string) string {
+	b, _ := json.Marshal(s)
+	// json.Marshal wraps in quotes: "foo" → strip them
+	return string(b[1 : len(b)-1])
+}
+
+// requireIntArg validates that arg is a valid integer for the given tag name.
+// Returns the parsed value. Panics if arg is not a valid integer.
+func requireIntArg(tag, arg string) int {
+	val, err := strconv.Atoi(arg)
+	if err != nil {
+		panic(fmt.Sprintf("%s= requires an integer argument, got: %s", tag, arg))
+	}
+	return val
+}
+
+// requireNumericArg validates that arg is a valid number (integer or float).
+// Panics if arg is not a valid number.
+func requireNumericArg(tag, arg string) {
+	if _, err := strconv.ParseFloat(arg, 64); err != nil {
+		panic(fmt.Sprintf("%s= requires a numeric argument, got: %s", tag, arg))
+	}
+}
+
+// regexChainMap maps validator tags to their regex pattern strings.
+// Used by renderChain and renderV3Chain to generate .regex() calls.
+var regexChainMap = map[string]string{
+	"url_encoded": uRLEncodedRegexString,
+	"alpha":       alphaRegexString,
+	"alphanum":    alphaNumericRegexString,
+	"ascii":       aSCIIRegexString,
+	"number":      numberRegexString,
+	"numeric":     numericRegexString,
+	"mongodb":     mongodbRegexString,
+	"latitude":    latitudeRegexString,
+	"longitude":   longitudeRegexString,
+	"md4":         md4RegexString,
+}
+
+func renderRegex(pattern string) string {
+	return fmt.Sprintf(".regex(/%s/)", pattern)
+}
+
+// unicodeRegexChainMap is like regexChainMap but for patterns needing the /u flag.
+var unicodeRegexChainMap = map[string]string{
+	"alphanumunicode": alphaUnicodeNumericRegexString,
+	"alphaunicode":    alphaUnicodeRegexString,
+}
+
+func renderUnicodeRegex(pattern string) string {
+	return fmt.Sprintf(".regex(/%s/u)", pattern)
+}
+
+// renderChain is used by both v3 and v4 rendering
+func renderChain(v stringValidator) string {
+	// Regex-based validators
+	if pattern, ok := regexChainMap[v.tag]; ok {
+		return renderRegex(pattern)
+	}
+	if pattern, ok := unicodeRegexChainMap[v.tag]; ok {
+		return renderUnicodeRegex(pattern)
+	}
+
+	switch v.tag {
+	case "required":
+		return ".min(1)"
+	case "contains":
+		return fmt.Sprintf(`.includes("%s")`, escapeJSString(v.arg))
+	case "startswith":
+		return fmt.Sprintf(`.startsWith("%s")`, escapeJSString(v.arg))
+	case "endswith":
+		return fmt.Sprintf(`.endsWith("%s")`, escapeJSString(v.arg))
+	case "eq":
+		return fmt.Sprintf(`.refine((val) => val === "%s")`, escapeJSString(v.arg))
+	case "ne":
+		return fmt.Sprintf(`.refine((val) => val !== "%s")`, escapeJSString(v.arg))
+	case "len":
+		requireIntArg("len", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length === %s, 'String must contain %s character(s)')", v.arg, v.arg)
+	case "min":
+		requireIntArg("min", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
+	case "max":
+		requireIntArg("max", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
+	case "gt":
+		val := requireIntArg("gt", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length > %d, 'String must contain at least %d character(s)')", val, val+1)
+	case "gte":
+		requireIntArg("gte", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length >= %s, 'String must contain at least %s character(s)')", v.arg, v.arg)
+	case "lt":
+		val := requireIntArg("lt", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length < %d, 'String must contain at most %d character(s)')", val, val-1)
+	case "lte":
+		requireIntArg("lte", v.arg)
+		return fmt.Sprintf(".refine((val) => [...val].length <= %s, 'String must contain at most %s character(s)')", v.arg, v.arg)
+	case "lowercase":
+		return ".refine((val) => val === val.toLowerCase())"
+	case "uppercase":
+		return ".refine((val) => val === val.toUpperCase())"
+	case "json":
+		return ".refine((val) => { try { JSON.parse(val); return true } catch { return false } })"
+	case "_custom":
+		return v.arg
+	default:
+		// Format/union tags (email, url, ip, etc.) are handled by
+		// renderV3Chain or renderV4FormatBase, not here.
+		if !formatTags[v.tag] && !unionTags[v.tag] {
+			panic(fmt.Sprintf("renderChain: unhandled tag %q", v.tag))
+		}
+		return ""
+	}
+}
+
+// v3FormatRegexMap maps format validator tags to their v3 regex pattern strings.
+// These tags have v4 top-level builders but fall back to regex in v3.
+var v3FormatRegexMap = map[string]string{
+	"base64":        base64RegexString,
+	"hexadecimal":   hexadecimalRegexString,
+	"jwt":           jWTRegexString,
+	"uuid":          uUIDRegexString,
+	"uuid3":         uUID3RegexString,
+	"uuid3_rfc4122": uUID3RFC4122RegexString,
+	"uuid4":         uUID4RegexString,
+	"uuid4_rfc4122": uUID4RFC4122RegexString,
+	"uuid5":         uUID5RegexString,
+	"uuid5_rfc4122": uUID5RFC4122RegexString,
+	"uuid_rfc4122":  uUIDRFC4122RegexString,
+	"md5":           md5RegexString,
+	"sha256":        sha256RegexString,
+	"sha384":        sha384RegexString,
+	"sha512":        sha512RegexString,
+}
+
+func (c *Converter) renderV3Chain(v stringValidator) string {
+	if s := renderChain(v); s != "" {
+		return s
+	}
+
+	// v3 format regex fallbacks (these have v4 top-level builders but use regex in v3)
+	if pattern, ok := v3FormatRegexMap[v.tag]; ok {
+		return renderRegex(pattern)
+	}
+
+	switch v.tag {
+	case "email":
+		return ".email()"
+	case "url":
+		return ".url()"
+	case "ip", "ip_addr":
+		return ".ip()"
+	case "ipv4", "ip4_addr":
+		return `.ip({ version: "v4" })`
+	case "ipv6", "ip6_addr":
+		return `.ip({ version: "v6" })`
+	case "http_url":
+		return ".url()"
+	case "datetime":
+		return ".datetime()"
+	default:
+		panic(fmt.Sprintf("renderV3Chain: unhandled tag %q", v.tag))
+	}
+}
+
+func (c *Converter) renderV4FormatBase(v stringValidator) string {
+	switch v.tag {
+	case "email":
+		return "z.email()"
+	case "url":
+		return "z.url()"
+	case "http_url":
+		return "z.httpUrl()"
+	case "ipv4", "ip4_addr":
+		return "z.ipv4()"
+	case "ipv6", "ip6_addr":
+		return "z.ipv6()"
+	case "base64":
+		return "z.base64()"
+	case "datetime":
+		return "z.iso.datetime()"
+	case "hexadecimal":
+		return "z.hex()"
+	case "jwt":
+		return "z.jwt()"
+	case "uuid":
+		return "z.uuid()"
+	case "uuid3", "uuid3_rfc4122":
+		return `z.uuid({ version: "v3" })`
+	case "uuid4", "uuid4_rfc4122":
+		return `z.uuid({ version: "v4" })`
+	case "uuid5", "uuid5_rfc4122":
+		return `z.uuid({ version: "v5" })`
+	case "uuid_rfc4122":
+		return "z.uuid()"
+	case "md5":
+		return `z.hash("md5")`
+	case "sha256":
+		return `z.hash("sha256")`
+	case "sha384":
+		return `z.hash("sha384")`
+	case "sha512":
+		return `z.hash("sha512")`
+	default:
+		panic(fmt.Sprintf("renderV4FormatBase: unhandled format tag %q", v.tag))
+	}
+}
+
+// isPartialRecordKeySchema returns true if the key schema represents a finite
+// set of keys (enum), meaning z.partialRecord should be used instead of z.record.
+func isPartialRecordKeySchema(schema string) bool {
+	schema = strings.TrimSpace(schema)
+	return strings.HasPrefix(schema, "z.enum(")
+}
+
+func (c *Converter) parseValidationTagPart(part string) (string, string, bool) {
 	part = strings.TrimSpace(part)
 	if part == "" {
 		return "", "", true
@@ -1123,8 +1531,17 @@ func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, 
 		return "", "", true
 	}
 
+	return valName, valValue, false
+}
+
+func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, validateStr *strings.Builder, t reflect.Type) (string, string, bool) {
+	valName, valValue, done := c.parseValidationTagPart(part)
+	if done {
+		return "", "", true
+	}
+
 	if h, ok := c.customTags[valName]; ok {
-		v := h(c, reflect.TypeOf(0), valValue, 0)
+		v := h(c, t, valValue, 0)
 		if strings.HasPrefix(v, ".refine") {
 			*refines = append(*refines, v)
 		} else {
@@ -1252,7 +1669,7 @@ func getTypeNameWithGenerics(name string) string {
 
 	typeArgs := strings.Split(name[typeArgsIdx+1:len(name)-1], ",")
 	for _, arg := range typeArgs {
-		sb.WriteString(strings.ToTitle(arg[:1])) // Capitalize first letter
+		sb.WriteString(strings.ToUpper(arg[:1])) // Capitalize first letter
 		sb.WriteString(arg[1:])
 	}
 

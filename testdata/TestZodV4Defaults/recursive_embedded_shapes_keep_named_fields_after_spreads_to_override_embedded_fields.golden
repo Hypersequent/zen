@@ -1,0 +1,22 @@
+// @zod-version: v4
+// @typecheck
+export type TreeNode = {
+  Value: string,
+  CreatedAt: Date,
+  Children: TreeNode[] | null,
+  UpdatedAt: string,
+}
+const TreeNodeSchemaShape = {
+  Value: z.string(),
+  CreatedAt: z.coerce.date(),
+  get Children() { return TreeNodeSchema.array().nullable(); },
+  UpdatedAt: z.string(),
+}
+export const TreeNodeSchema: z.ZodType<TreeNode> = z.object(TreeNodeSchemaShape)
+
+export const TreeSchema = z.object({
+  ...TreeNodeSchemaShape,
+  UpdatedAt: z.coerce.date(),
+})
+export type Tree = z.infer<typeof TreeSchema>
+
