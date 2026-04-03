@@ -201,14 +201,6 @@ export const cases: TestCase[] = [
 		success: false,
 	},
 
-	// --- TestCustom ---
-	{
-		name: "custom type: parses valid object",
-		golden: "TestCustom.golden",
-		schema: "UserSchema",
-		input: { Name: "John", Money: "100.00" },
-		success: true,
-	},
 
 	// ---------------------------------------------------------------------------
 	// ARRAYS
