@@ -864,6 +864,23 @@ func TestCustomTypes(t *testing.T) {
 	})
 }
 
+func TestWithIgnoreTags(t *testing.T) {
+	type User struct {
+		Name string `validate:"required,customtag=value"`
+	}
+
+	t.Run("panics on unknown tag", func(t *testing.T) {
+		assert.Panics(t, func() { StructToZodSchema(User{}) })
+	})
+
+	t.Run("ignores specified tag", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			StructToZodSchema(User{}, WithIgnoreTags("customtag"))
+		})
+		goldenAssert(t, []byte(StructToZodSchema(User{}, WithIgnoreTags("customtag"))))
+	})
+}
+
 func TestEverything(t *testing.T) {
 	// The order matters PostWithMetaData needs to be declared after post otherwise it will raise a
 	// `Block-scoped variable 'Post' used before its declaration.` typescript error.
