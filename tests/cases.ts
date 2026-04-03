@@ -942,6 +942,80 @@ export const cases: TestCase[] = [
 		success: false,
 	},
 
+	// --- TestOneofRequired ---
+	{
+		name: "oneof required: accepts valid status",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "active" },
+		success: true,
+	},
+	{
+		name: "oneof required: rejects empty status",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "" },
+		success: false,
+	},
+	{
+		name: "oneof required: rejects invalid status",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "deleted" },
+		success: false,
+	},
+	{
+		name: "oneof optional: accepts with channel present",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "active", channel: "email" },
+		success: true,
+	},
+	{
+		name: "oneof optional: accepts without channel (optional)",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "active" },
+		success: true,
+	},
+	{
+		name: "oneof optional: rejects invalid channel",
+		golden: "TestOneofRequired.golden",
+		schema: "PayloadSchema",
+		input: { status: "active", channel: "phone" },
+		success: false,
+	},
+
+	// --- OneofIpSchema (enum ignores ip validator) ---
+	{
+		name: "oneof+ip: accepts value in oneof list",
+		golden: "TestStringValidations/enum_ignores_other_validators.golden",
+		schema: "OneofIpSchema",
+		input: { v: "127.0.0.1" },
+		success: true,
+	},
+	{
+		name: "oneof+ip: accepts second value in oneof list",
+		golden: "TestStringValidations/enum_ignores_other_validators.golden",
+		schema: "OneofIpSchema",
+		input: { v: "::1" },
+		success: true,
+	},
+	{
+		name: "oneof+ip: rejects valid ip not in oneof list",
+		golden: "TestStringValidations/enum_ignores_other_validators.golden",
+		schema: "OneofIpSchema",
+		input: { v: "192.168.1.1" },
+		success: false,
+	},
+	{
+		name: "oneof+ip: rejects non-ip string",
+		golden: "TestStringValidations/enum_ignores_other_validators.golden",
+		schema: "OneofIpSchema",
+		input: { v: "hello" },
+		success: false,
+	},
+
 	// --- lenSchema ---
 	{
 		name: "string len: accepts string of length 5",
@@ -1590,16 +1664,6 @@ export const cases: TestCase[] = [
 		name: "v4 defaults: ip unions inherit generic string constraints",
 		golden:
 			"TestZodV4Defaults/ip_unions_inherit_generic_string_constraints.golden",
-		schema: "PayloadSchema",
-		input: { Address: "127.0.0.1" },
-		success: true,
-	},
-
-	// --- TestZodV4Defaults/oneof_takes_precedence_over_ip_specialization ---
-	{
-		name: "v4 defaults: oneof takes precedence over ip specialization",
-		golden:
-			"TestZodV4Defaults/oneof_takes_precedence_over_ip_specialization.golden",
 		schema: "PayloadSchema",
 		input: { Address: "127.0.0.1" },
 		success: true,

@@ -452,6 +452,38 @@ func TestStringValidations(t *testing.T) {
 
 		goldenAssert(t, []byte(c.Export()))
 	})
+
+	t.Run("enum ignores other validators", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		c.AddTypeWithName(struct {
+			V string `validate:"required,oneof=a b" json:"v"`
+		}{}, "RequiredOneof")
+		c.AddTypeWithName(struct {
+			V string `validate:"oneof=a b,contains=x" json:"v"`
+		}{}, "OneofContains")
+		c.AddTypeWithName(struct {
+			V string `validate:"oneof=a b,startswith=a" json:"v"`
+		}{}, "OneofStartswith")
+		c.AddTypeWithName(struct {
+			V string `validate:"oneof=a b,endswith=z" json:"v"`
+		}{}, "OneofEndswith")
+		c.AddTypeWithName(struct {
+			V string `validate:"oneof='127.0.0.1' '::1',ip" json:"v"`
+		}{}, "OneofIp")
+		goldenAssert(t, []byte(c.Export()))
+	})
+}
+
+func TestOneofRequired(t *testing.T) {
+	type Payload struct {
+		Status string `json:"status" validate:"required,oneof=active inactive"`
+		// Would generate the same schema as the above. This doesn't mirror go validator exactly as it allows empty values.
+		// For now let's assume that empty strings are not valid enum values, but we can revisit if there's demand for that.
+		StatusImplicitRequired string  `json:"statusImplicitRequired" validate:"oneof=active inactive"`
+		Channel                *string `json:"channel,omitempty" validate:"omitempty,oneof=email sms"`
+	}
+
+	assertSchema(t, Payload{})
 }
 
 func TestZodV4Defaults(t *testing.T) {
@@ -501,14 +533,6 @@ func TestZodV4Defaults(t *testing.T) {
 	t.Run("ip unions inherit generic string constraints", func(t *testing.T) {
 		type Payload struct {
 			Address string `validate:"ip,required,max=45"`
-		}
-
-		assertSchema(t, Payload{}, "v4")
-	})
-
-	t.Run("oneof takes precedence over ip specialization", func(t *testing.T) {
-		type Payload struct {
-			Address string `validate:"oneof='127.0.0.1' '::1',ip"`
 		}
 
 		assertSchema(t, Payload{}, "v4")

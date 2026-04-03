@@ -1186,31 +1186,13 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 		panic("cannot combine multiple format validators (e.g. email + url)")
 	}
 
-	// Phase 3: Handle enum — return early
+	// Phase 3: Handle enum — return early, other validators are redundant
 	if hasEnum {
-		base := ""
-		var chain strings.Builder
 		for _, v := range validators {
 			if v.tag == "oneof" || v.tag == "boolean" {
-				base = v.arg
-				break
+				return v.arg
 			}
 		}
-		for _, v := range validators {
-			if v.tag == "oneof" || v.tag == "boolean" {
-				continue
-			}
-			var rendered string
-			if c.zodV3 {
-				rendered = c.renderV3Chain(v)
-			} else {
-				rendered = renderChain(v)
-			}
-			if strings.HasPrefix(rendered, ".refine") {
-				chain.WriteString(rendered)
-			}
-		}
-		return base + chain.String()
 	}
 
 	// Phase 4: Render v3
