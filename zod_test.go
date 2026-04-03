@@ -538,14 +538,6 @@ func TestZodV4Defaults(t *testing.T) {
 		assertSchema(t, Payload{}, "v3", "v4")
 	})
 
-	t.Run("enum keyed maps become partial records", func(t *testing.T) {
-		type Payload struct {
-			Metadata map[string]string `validate:"dive,keys,oneof=draft published,endkeys"`
-		}
-
-		assertSchema(t, Payload{}, "v4")
-	})
-
 	t.Run("named field shadows embedded field", func(t *testing.T) {
 		type Base struct {
 			ID   string `json:"id"`
@@ -726,6 +718,14 @@ func TestMapWithNonStringKey(t *testing.T) {
 	t.Run("float_key", func(t *testing.T) {
 		assertSchema(t, Map3{})
 	})
+}
+
+func TestMapWithEnumKey(t *testing.T) {
+	type Payload struct {
+		Metadata map[string]string `validate:"dive,keys,oneof=draft published,endkeys"`
+	}
+
+	assertSchema(t, Payload{}, "v3", "v4")
 }
 
 func TestGetValidateKeys(t *testing.T) {

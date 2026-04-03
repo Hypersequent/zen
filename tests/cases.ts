@@ -1543,14 +1543,14 @@ export const cases: TestCase[] = [
 	// --- TestZodV4Defaults/enum_keyed_maps_become_partial_records ---
 	{
 		name: "v4 defaults: enum keyed maps become partial records",
-		golden: "TestZodV4Defaults/enum_keyed_maps_become_partial_records.golden",
+		golden: "TestMapWithEnumKey/v4.golden",
 		schema: "PayloadSchema",
 		input: { Metadata: { draft: "some note" } },
 		success: true,
 	},
 	{
 		name: "v4 defaults: enum keyed maps for partial records reject invalid keys",
-		golden: "TestZodV4Defaults/enum_keyed_maps_become_partial_records.golden",
+		golden: "TestMapWithEnumKey/v4.golden",
 		schema: "PayloadSchema",
 		input: { Metadata: { invalid: "some note" } },
 		success: false,
