@@ -836,6 +836,10 @@ func TestGetValidateValues(t *testing.T) {
 	t.Run("dive keys without endkeys panics", func(t *testing.T) {
 		assert.Panics(t, func() { getValidateValues("dive,keys,min=3") })
 	})
+
+	t.Run("bare dive returns empty", func(t *testing.T) {
+		assert.Equal(t, "", getValidateValues("dive"))
+	})
 }
 
 func TestGetValidateCurrent(t *testing.T) {

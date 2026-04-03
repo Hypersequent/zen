@@ -984,7 +984,11 @@ func getValidateValues(validate string) string {
 		}
 		validateValues = strings.TrimPrefix(validateValues, ",")
 	} else if strings.Contains(validate, "dive") {
-		removedPrefix := strings.SplitN(validate, "dive,", 2)[1]
+		parts := strings.SplitN(validate, "dive,", 2)
+		if len(parts) < 2 {
+			return ""
+		}
+		removedPrefix := parts[1]
 		if strings.Contains(removedPrefix, ",dive") {
 			validateValues = strings.SplitN(removedPrefix, ",dive", 2)[0]
 		} else {
