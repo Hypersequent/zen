@@ -1089,12 +1089,6 @@ var unionTags = map[string]bool{
 	"ip": true, "ip_addr": true,
 }
 
-// Tags where generated Zod schemas accepts an empty string
-// unless `.min(1)` is added.
-var v4AcceptsEmpty = map[string]bool{
-	"base64": true, "hexadecimal": true,
-}
-
 func (c *Converter) validateString(validate string) string {
 	validators := c.parseStringValidators(validate)
 	return c.renderStringSchema(validators)
@@ -1162,24 +1156,16 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 	// Phase 1: Classify validators
 	hasFormat := false
 	hasUnion := false
-	hasRequired := false
 	hasEnum := false
-	formatIdx := -1
 	formatCount := 0
 
-	for i, v := range validators {
+	for _, v := range validators {
 		if formatTags[v.tag] {
 			hasFormat = true
 			formatCount++
-			if formatIdx == -1 {
-				formatIdx = i
-			}
 		}
 		if unionTags[v.tag] {
 			hasUnion = true
-		}
-		if v.tag == "required" {
-			hasRequired = true
 		}
 		if v.tag == "oneof" || v.tag == "boolean" {
 			hasEnum = true
@@ -1205,14 +1191,8 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 
 	// Phase 4: Render v3
 	if c.zodV3 {
-		// Skip required when a format or union is present — format validators
-		// already reject empty strings in both v3 and v4.
-		skipRequired := hasFormat || hasUnion
 		var chain strings.Builder
 		for _, v := range validators {
-			if v.tag == "required" && skipRequired {
-				continue
-			}
 			chain.WriteString(c.renderV3Chain(v))
 		}
 		return "z.string()" + chain.String()
@@ -1224,60 +1204,26 @@ func (c *Converter) renderStringSchema(validators []stringValidator) string {
 	if hasUnion {
 		var armChain strings.Builder
 		for _, v := range validators {
-			if v.tag == "required" || unionTags[v.tag] {
+			if unionTags[v.tag] {
 				continue
 			}
 			armChain.WriteString(renderChain(v))
 		}
 		ac := armChain.String()
-		return fmt.Sprintf("z.union([z.ipv4()%s, z.ipv6()%s])", ac, ac)
+		return fmt.Sprintf("z.union([z.string().check(z.ipv4())%s, z.string().check(z.ipv6())%s])", ac, ac)
 	}
 
-	// Case 2: Format present
+	// Case 2: Format present — use z.string() base with .check() for format
 	if hasFormat {
-		// Check if anything (non-required, non-omitempty) precedes the format
-		hasTransformBefore := false
-		for i := 0; i < formatIdx; i++ {
-			v := validators[i]
-			if v.tag != "required" && v.tag != "omitempty" {
-				hasTransformBefore = true
-				break
-			}
-		}
-
-		// Determine if required should be kept (base64/hex accept empty in v4)
-		keepRequired := hasRequired && v4AcceptsEmpty[validators[formatIdx].tag]
-
-		if hasTransformBefore {
-			// Fall back to z.string() + chains (format becomes a chain method via v3 form)
-			var chain strings.Builder
-			for _, v := range validators {
-				if v.tag == "required" && !keepRequired {
-					continue
-				}
-				if formatTags[v.tag] {
-					chain.WriteString(c.renderV3Chain(v))
-				} else {
-					chain.WriteString(renderChain(v))
-				}
-			}
-			return "z.string()" + chain.String()
-		}
-
-		// Format as base
-		base := c.renderV4FormatBase(validators[formatIdx])
 		var chain strings.Builder
-		if keepRequired {
-			chain.WriteString(".min(1)")
-		}
-		for i := formatIdx + 1; i < len(validators); i++ {
-			v := validators[i]
-			if v.tag == "required" && !keepRequired {
-				continue
+		for _, v := range validators {
+			if formatTags[v.tag] {
+				chain.WriteString(c.renderV4FormatCheck(v))
+			} else {
+				chain.WriteString(renderChain(v))
 			}
-			chain.WriteString(renderChain(v))
 		}
-		return base + chain.String()
+		return "z.string()" + chain.String()
 	}
 
 	// Case 3: No format/union — plain string
@@ -1399,7 +1345,7 @@ func renderChain(v stringValidator) string {
 		return v.arg
 	default:
 		// Format/union tags (email, url, ip, etc.) are handled by
-		// renderV3Chain or renderV4FormatBase, not here.
+		// renderV3Chain or renderV4FormatCheck, not here.
 		if !formatTags[v.tag] && !unionTags[v.tag] {
 			panic(fmt.Sprintf("renderChain: unhandled tag %q", v.tag))
 		}
@@ -1457,46 +1403,46 @@ func (c *Converter) renderV3Chain(v stringValidator) string {
 	}
 }
 
-func (c *Converter) renderV4FormatBase(v stringValidator) string {
+func (c *Converter) renderV4FormatCheck(v stringValidator) string {
 	switch v.tag {
 	case "email":
-		return "z.email()"
+		return ".check(z.email())"
 	case "url":
-		return "z.url()"
+		return ".check(z.url())"
 	case "http_url":
-		return "z.httpUrl()"
+		return ".check(z.httpUrl())"
 	case "ipv4", "ip4_addr":
-		return "z.ipv4()"
+		return ".check(z.ipv4())"
 	case "ipv6", "ip6_addr":
-		return "z.ipv6()"
+		return ".check(z.ipv6())"
 	case "base64":
-		return "z.base64()"
+		return ".check(z.base64())"
 	case "datetime":
-		return "z.iso.datetime()"
+		return ".check(z.iso.datetime())"
 	case "hexadecimal":
-		return "z.hex()"
+		return ".check(z.hex())"
 	case "jwt":
-		return "z.jwt()"
+		return ".check(z.jwt())"
 	case "uuid":
-		return "z.uuid()"
+		return ".check(z.uuid())"
 	case "uuid3", "uuid3_rfc4122":
-		return `z.uuid({ version: "v3" })`
+		return `.check(z.uuid({ version: "v3" }))`
 	case "uuid4", "uuid4_rfc4122":
-		return `z.uuid({ version: "v4" })`
+		return `.check(z.uuid({ version: "v4" }))`
 	case "uuid5", "uuid5_rfc4122":
-		return `z.uuid({ version: "v5" })`
+		return `.check(z.uuid({ version: "v5" }))`
 	case "uuid_rfc4122":
-		return "z.uuid()"
+		return ".check(z.uuid())"
 	case "md5":
-		return `z.hash("md5")`
+		return `.check(z.hash("md5"))`
 	case "sha256":
-		return `z.hash("sha256")`
+		return `.check(z.hash("sha256"))`
 	case "sha384":
-		return `z.hash("sha384")`
+		return `.check(z.hash("sha384"))`
 	case "sha512":
-		return `z.hash("sha512")`
+		return `.check(z.hash("sha512"))`
 	default:
-		panic(fmt.Sprintf("renderV4FormatBase: unhandled format tag %q", v.tag))
+		panic(fmt.Sprintf("renderV4FormatCheck: unhandled format tag %q", v.tag))
 	}
 }
 

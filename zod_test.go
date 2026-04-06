@@ -536,7 +536,12 @@ func TestZodV4Defaults(t *testing.T) {
 			},
 		}
 
-		goldenAssert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})), withGoldenZodVersion("v4"))
+		goldenAssert(
+			t,
+			[]byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})),
+			withGoldenZodVersion("v3"),
+			withGoldenZodVersion("v4"),
+		)
 	})
 
 	t.Run("custom tag before required base64 preserves min(1)", func(t *testing.T) {

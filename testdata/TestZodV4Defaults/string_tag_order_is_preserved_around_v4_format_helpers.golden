@@ -1,8 +1,8 @@
 // @zod-version: v4
 // @typecheck
 export const PayloadSchema = z.object({
-  TrimmedThenEmail: z.string().trim().email(),
-  EmailThenTrimmed: z.email().trim(),
+  TrimmedThenEmail: z.string().trim().check(z.email()),
+  EmailThenTrimmed: z.string().check(z.email()).trim(),
 })
 export type Payload = z.infer<typeof PayloadSchema>
 

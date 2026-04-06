@@ -1797,4 +1797,46 @@ export const cases: TestCase[] = [
 		input: { Name: "John", Email: null },
 		success: true,
 	},
+
+	// ---------------------------------------------------------------------------
+	// STRING TAG ORDER WITH FORMAT HELPERS (trim + email)
+	// ---------------------------------------------------------------------------
+
+	// --- TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers ---
+	{
+		name: "trim then email: valid email passes",
+		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		schema: "PayloadSchema",
+		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "user@example.com" },
+		success: true,
+	},
+	{
+		name: "trim then email: invalid email rejects",
+		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		schema: "PayloadSchema",
+		input: { TrimmedThenEmail: "not-an-email", EmailThenTrimmed: "user@example.com" },
+		success: false,
+	},
+	{
+		name: "email then trimmed: invalid email rejects",
+		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		schema: "PayloadSchema",
+		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "not-an-email" },
+		success: false,
+	},
+	{
+		name: "trim then email: spaces trimmed before validation passes",
+		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		schema: "PayloadSchema",
+		input: { TrimmedThenEmail: "  user@example.com  ", EmailThenTrimmed: "user@example.com" },
+		success: true,
+		output: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "user@example.com" },
+	},
+	{
+		name: "email then trimmed: spaces cause check to fail before trim runs",
+		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		schema: "PayloadSchema",
+		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "  user@example.com  " },
+		success: false,
+	},
 ];

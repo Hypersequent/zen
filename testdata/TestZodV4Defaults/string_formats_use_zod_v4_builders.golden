@@ -1,11 +1,11 @@
 // @zod-version: v4
 // @typecheck
 export const PayloadSchema = z.object({
-  Email: z.email(),
-  Link: z.httpUrl(),
-  Base64: z.base64(),
-  ID: z.uuid({ version: "v4" }),
-  Checksum: z.hash("md5"),
+  Email: z.string().check(z.email()),
+  Link: z.string().check(z.httpUrl()),
+  Base64: z.string().check(z.base64()),
+  ID: z.string().check(z.uuid({ version: "v4" })),
+  Checksum: z.string().check(z.hash("md5")),
 })
 export type Payload = z.infer<typeof PayloadSchema>
 
