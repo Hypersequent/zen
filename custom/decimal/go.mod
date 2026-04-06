@@ -7,7 +7,7 @@ replace github.com/hypersequent/zen => ../..
 require (
 	github.com/hypersequent/zen v0.0.0-00010101000000-000000000000
 	github.com/shopspring/decimal v1.3.1
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.9.0
 )
 
 require (

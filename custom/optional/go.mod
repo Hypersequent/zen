@@ -7,7 +7,7 @@ replace github.com/hypersequent/zen => ../..
 require (
 	4d63.com/optional v0.2.0
 	github.com/hypersequent/zen v0.0.0-00010101000000-000000000000
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.9.0
 )
 
 require (
