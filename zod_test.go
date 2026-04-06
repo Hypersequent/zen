@@ -11,41 +11,20 @@ import (
 	"github.com/xorcare/golden"
 )
 
-// goldenMeta holds metadata written as comments at the top of golden files.
-type goldenMeta struct {
-	zodVersion  string // "v3", "v4", or "" (works with all versions)
-	noTypecheck bool   // opt out of docker type-check tests
-}
-
-type goldenOpt func(*goldenMeta)
-
-func withGoldenZodVersion(v string) goldenOpt {
-	return func(m *goldenMeta) { m.zodVersion = v }
-}
-
 // goldenAssert wraps golden.Assert, prepending metadata comments to the file.
 // The metadata is used by the docker type-check script to determine which zod
 // version to install and whether to include the file in type checking.
 //
 // All golden files are type-checked by default.
-func goldenAssert(t *testing.T, data []byte, opts ...goldenOpt) {
+func goldenAssert(t *testing.T, data string, version string) {
 	t.Helper()
-	var meta goldenMeta
-	for _, o := range opts {
-		o(&meta)
-	}
 	var lines []string
-	if meta.zodVersion != "" {
-		lines = append(lines, "// @zod-version: "+meta.zodVersion)
+	if version != "" {
+		lines = append(lines, "// @zod-version: "+version)
 	}
-	if !meta.noTypecheck {
-		lines = append(lines, "// @typecheck")
-	}
-	if len(lines) > 0 {
-		header := strings.Join(lines, "\n") + "\n"
-		data = append([]byte(header), data...)
-	}
-	golden.Assert(t, data)
+	lines = append(lines, "// @typecheck")
+	header := strings.Join(lines, "\n") + "\n"
+	golden.Assert(t, []byte(header+data))
 }
 
 // assertSchema is a golden file test helper for Zod schema output.
@@ -73,13 +52,13 @@ func assertSchema(t *testing.T, schema any, versions ...string) {
 		v3out := StructToZodSchema(schema, WithZodV3())
 		v4out := StructToZodSchema(schema)
 		assert.Equal(t, v3out, v4out)
-		goldenAssert(t, []byte(v4out))
+		goldenAssert(t, v4out, "")
 	case 1:
-		goldenAssert(t, []byte(StructToZodSchema(schema, optsFor(versions[0])...)), withGoldenZodVersion(versions[0]))
+		goldenAssert(t, StructToZodSchema(schema, optsFor(versions[0])...), versions[0])
 	default:
 		for _, ver := range versions {
 			t.Run(ver, func(t *testing.T) {
-				goldenAssert(t, []byte(StructToZodSchema(schema, optsFor(ver)...)), withGoldenZodVersion(ver))
+				goldenAssert(t, StructToZodSchema(schema, optsFor(ver)...), ver)
 			})
 		}
 	}
@@ -111,7 +90,7 @@ func assertValidators(t *testing.T, fieldType reflect.Type, validators []struct{
 		v3 := buildValidatorConverter(fieldType, validators, WithZodV3())
 		v4 := buildValidatorConverter(fieldType, validators)
 		assert.Equal(t, v3.Export(), v4.Export())
-		goldenAssert(t, []byte(v4.Export()))
+		goldenAssert(t, v4.Export(), "")
 	default:
 		for _, ver := range versions {
 			t.Run(ver, func(t *testing.T) {
@@ -120,7 +99,7 @@ func assertValidators(t *testing.T, fieldType reflect.Type, validators []struct{
 					opts = append(opts, WithZodV3())
 				}
 				c := buildValidatorConverter(fieldType, validators, opts...)
-				goldenAssert(t, []byte(c.Export()), withGoldenZodVersion(ver))
+				goldenAssert(t, c.Export(), ver)
 			})
 		}
 	}
@@ -204,7 +183,7 @@ func TestStructSimplePrefix(t *testing.T) {
 	v3out := StructToZodSchema(User{}, WithPrefix("Bot"), WithZodV3())
 	v4out := StructToZodSchema(User{}, WithPrefix("Bot"))
 	assert.Equal(t, v3out, v4out)
-	goldenAssert(t, []byte(v4out))
+	goldenAssert(t, v4out, "")
 }
 
 func TestNestedStruct(t *testing.T) {
@@ -459,7 +438,7 @@ func TestStringValidations(t *testing.T) {
 		}})
 		c.AddTypeWithName(reflect.New(eq).Elem().Interface(), "EqBackslash")
 
-		goldenAssert(t, []byte(c.Export()))
+		goldenAssert(t, c.Export(), "")
 	})
 
 	t.Run("enum ignores other validators", func(t *testing.T) {
@@ -479,7 +458,30 @@ func TestStringValidations(t *testing.T) {
 		c.AddTypeWithName(struct {
 			V string `validate:"oneof='127.0.0.1' '::1',ip" json:"v"`
 		}{}, "OneofIp")
-		goldenAssert(t, []byte(c.Export()))
+		goldenAssert(t, c.Export(), "")
+	})
+
+	t.Run("string tag order is preserved around v4 format helpers", func(t *testing.T) {
+		type Payload struct {
+			TrimmedThenEmail string `validate:"trim,email"`
+			EmailThenTrimmed string `validate:"email,trim"`
+		}
+
+		customTagHandlers := map[string]CustomFn{
+			"trim": func(c *Converter, t reflect.Type, validate string, i int) string {
+				return ".trim()"
+			},
+		}
+
+		for _, ver := range []string{"v3", "v4"} {
+			t.Run(ver, func(t *testing.T) {
+				opts := []Opt{WithCustomTags(customTagHandlers)}
+				if ver == "v3" {
+					opts = append(opts, WithZodV3())
+				}
+				goldenAssert(t, NewConverterWithOpts(opts...).Convert(Payload{}), ver)
+			})
+		}
 	})
 }
 
@@ -524,26 +526,6 @@ func TestZodV4Defaults(t *testing.T) {
 		assertSchema(t, Payload{}, "v4")
 	})
 
-	t.Run("string tag order is preserved around v4 format helpers", func(t *testing.T) {
-		type Payload struct {
-			TrimmedThenEmail string `validate:"trim,email"`
-			EmailThenTrimmed string `validate:"email,trim"`
-		}
-
-		customTagHandlers := map[string]CustomFn{
-			"trim": func(c *Converter, t reflect.Type, validate string, i int) string {
-				return ".trim()"
-			},
-		}
-
-		goldenAssert(
-			t,
-			[]byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})),
-			withGoldenZodVersion("v3"),
-			withGoldenZodVersion("v4"),
-		)
-	})
-
 	t.Run("custom tag before required base64 preserves min(1)", func(t *testing.T) {
 		type Payload struct {
 			Data string `validate:"trim,required,base64"`
@@ -556,7 +538,7 @@ func TestZodV4Defaults(t *testing.T) {
 			},
 		}
 
-		goldenAssert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{})), withGoldenZodVersion("v4"))
+		goldenAssert(t, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Payload{}), "v4")
 	})
 
 	t.Run("ip unions inherit generic string constraints", func(t *testing.T) {
@@ -616,7 +598,7 @@ func TestZodV4Defaults(t *testing.T) {
 			Next *Node `json:"next"`
 		}
 
-		goldenAssert(t, []byte(StructToZodSchema(Node{})), withGoldenZodVersion("v4"))
+		goldenAssert(t, StructToZodSchema(Node{}), "v4")
 	})
 
 	t.Run("recursive embedded shapes keep named fields after spreads to override embedded fields", func(t *testing.T) {
@@ -925,7 +907,7 @@ func TestCustomTypes(t *testing.T) {
 		v3out := v3c.Convert(User{})
 		v4out := v4c.Convert(User{})
 		assert.Equal(t, v3out, v4out)
-		goldenAssert(t, []byte(v4out))
+		goldenAssert(t, v4out, "")
 	})
 
 	t.Run("custom type resolves inner generic type", func(t *testing.T) {
@@ -950,7 +932,7 @@ func TestCustomTypes(t *testing.T) {
 		v3out := v3c.Convert(User{})
 		v4out := v4c.Convert(User{})
 		assert.Equal(t, v3out, v4out)
-		goldenAssert(t, []byte(v4out))
+		goldenAssert(t, v4out, "")
 	})
 
 	t.Run("custom type with nullable control", func(t *testing.T) {
@@ -970,7 +952,7 @@ func TestCustomTypes(t *testing.T) {
 		v3out := v3c.Convert(User{})
 		v4out := v4c.Convert(User{})
 		assert.Equal(t, v3out, v4out)
-		goldenAssert(t, []byte(v4out))
+		goldenAssert(t, v4out, "")
 	})
 }
 
@@ -987,7 +969,7 @@ func TestWithIgnoreTags(t *testing.T) {
 		assert.NotPanics(t, func() {
 			StructToZodSchema(User{}, WithIgnoreTags("customtag"))
 		})
-		goldenAssert(t, []byte(StructToZodSchema(User{}, WithIgnoreTags("customtag"))))
+		goldenAssert(t, StructToZodSchema(User{}, WithIgnoreTags("customtag")), "")
 	})
 }
 
@@ -1116,7 +1098,7 @@ func TestConvertSlice(t *testing.T) {
 	v3out := v3c.ConvertSlice(types)
 	v4out := v4c.ConvertSlice(types)
 	assert.Equal(t, v3out, v4out)
-	goldenAssert(t, []byte(v4out))
+	goldenAssert(t, v4out, "")
 }
 
 func TestConvertSliceWithValidations(t *testing.T) {
@@ -1237,7 +1219,7 @@ func TestGenerics(t *testing.T) {
 	v3out := v3c.Export()
 	v4out := c.Export()
 	assert.Equal(t, v3out, v4out)
-	goldenAssert(t, []byte(v4out))
+	goldenAssert(t, v4out, "")
 }
 
 func TestSliceFields(t *testing.T) {
@@ -1286,10 +1268,10 @@ func TestCustomTag(t *testing.T) {
 	}
 
 	t.Run("v3", func(t *testing.T) {
-		goldenAssert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers), WithZodV3()).Convert(Request{})), withGoldenZodVersion("v3"))
+		goldenAssert(t, NewConverterWithOpts(WithCustomTags(customTagHandlers), WithZodV3()).Convert(Request{}), "v3")
 	})
 	t.Run("v4", func(t *testing.T) {
-		goldenAssert(t, []byte(NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{})), withGoldenZodVersion("v4"))
+		goldenAssert(t, NewConverterWithOpts(WithCustomTags(customTagHandlers)).Convert(Request{}), "v4")
 	})
 }
 
@@ -1364,7 +1346,7 @@ func TestRecursiveEmbeddedStruct(t *testing.T) {
 		c.AddType(ItemD{})
 		c.AddType(ItemE{})
 		c.AddType(ItemF{})
-		goldenAssert(t, []byte(c.Export()), withGoldenZodVersion("v3"))
+		goldenAssert(t, c.Export(), "v3")
 	})
 	t.Run("v4", func(t *testing.T) {
 		c := NewConverterWithOpts()
@@ -1374,7 +1356,7 @@ func TestRecursiveEmbeddedStruct(t *testing.T) {
 		c.AddType(ItemD{})
 		c.AddType(ItemE{})
 		c.AddType(ItemF{})
-		goldenAssert(t, []byte(c.Export()), withGoldenZodVersion("v4"))
+		goldenAssert(t, c.Export(), "v4")
 	})
 }
 

@@ -8,7 +8,7 @@
  * Golden files with a @zod-version metadata that doesn't match are skipped.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { cases } from "./cases";
 
 // Golden files are copied to /test/golden/ as .ts files by the docker script.
@@ -23,25 +23,41 @@ const moduleCache = new Map<string, Record<string, unknown>>();
 // Cache for golden file zod version metadata
 const versionCache = new Map<string, string | null>();
 
+/**
+ * Resolves a golden path to a concrete .golden file path.
+ *
+ * If the path ends with ".golden", it is used as-is.
+ * Otherwise it is treated as a directory containing v3.golden / v4.golden,
+ * and the file matching currentZodVersion is returned.
+ */
+function resolveGolden(golden: string): string {
+  if (golden.endsWith(".golden")) {
+    return golden;
+  }
+  // Directory path — check that at least one version file exists
+  const dir = golden.endsWith("/") ? golden : golden + "/";
+  const hasV3 = existsSync(`/golden/${dir}v3.golden`);
+  const hasV4 = existsSync(`/golden/${dir}v4.golden`);
+  if (!hasV3 && !hasV4) {
+    throw new Error(
+      `No golden files found in directory "${golden}" — expected v3.golden or v4.golden`
+    );
+  }
+  return dir + currentZodVersion + ".golden";
+}
+
 function getGoldenZodVersion(golden: string): string | null {
-  if (!versionCache.has(golden)) {
-    const tsName = golden.replace(/\//g, "__").replace(/\.golden$/, ".ts");
+  const resolved = resolveGolden(golden);
+  if (!versionCache.has(resolved)) {
     try {
-      const content = readFileSync(`${GOLDEN_DIR}/${tsName}`, "utf-8");
-      // The docker script strips // @ comments but the version is in the original.
-      // Since prepare_ts strips metadata lines, we check the golden source directly.
-      // Actually, the golden source is at /golden/ (mounted read-only from testdata/).
-      const goldenSource = readFileSync(
-        `/golden/${golden}`,
-        "utf-8"
-      );
+      const goldenSource = readFileSync(`/golden/${resolved}`, "utf-8");
       const match = goldenSource.match(/^\/\/ @zod-version: (v\d+)/m);
-      versionCache.set(golden, match ? match[1] : null);
+      versionCache.set(resolved, match ? match[1] : null);
     } catch {
-      versionCache.set(golden, null);
+      versionCache.set(resolved, null);
     }
   }
-  return versionCache.get(golden)!;
+  return versionCache.get(resolved)!;
 }
 
 function shouldSkip(golden: string): boolean {
@@ -53,16 +69,17 @@ function shouldSkip(golden: string): boolean {
 }
 
 async function getSchema(golden: string, schemaName: string) {
-  if (!moduleCache.has(golden)) {
-    const tsName = golden.replace(/\//g, "__").replace(/\.golden$/, ".ts");
+  const resolved = resolveGolden(golden);
+  if (!moduleCache.has(resolved)) {
+    const tsName = resolved.replace(/\//g, "__").replace(/\.golden$/, ".ts");
     const mod = await import(`${GOLDEN_DIR}/${tsName}`);
-    moduleCache.set(golden, mod);
+    moduleCache.set(resolved, mod);
   }
-  const mod = moduleCache.get(golden)!;
+  const mod = moduleCache.get(resolved)!;
   const schema = mod[schemaName];
   if (!schema || typeof (schema as any).safeParse !== "function") {
     throw new Error(
-      `Schema "${schemaName}" not found or not a Zod schema in ${golden}`
+      `Schema "${schemaName}" not found or not a Zod schema in ${resolved}`
     );
   }
   return schema as { safeParse: (input: unknown) => any };

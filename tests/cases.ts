@@ -11,7 +11,7 @@
 export interface TestCase {
 	/** Description of what this test verifies */
 	name: string;
-	/** Path to golden file relative to testdata/ */
+	/** Path to golden file relative to testdata/, or a directory containing v3.golden */
 	golden: string;
 	/** Name of the exported schema to test (e.g. "UserSchema") */
 	schema: string;
@@ -200,7 +200,6 @@ export const cases: TestCase[] = [
 		input: { When: "" },
 		success: false,
 	},
-
 
 	// ---------------------------------------------------------------------------
 	// ARRAYS
@@ -765,7 +764,7 @@ export const cases: TestCase[] = [
 	// --- TestNestedStruct/v4 ---
 	{
 		name: "nested struct v4: parses valid object with spread shapes",
-		golden: "TestNestedStruct/v4.golden",
+		golden: "TestNestedStruct",
 		schema: "UserSchema",
 		input: { Tags: ["a", "b"], ID: "123", name: "John" },
 		success: true,
@@ -774,7 +773,7 @@ export const cases: TestCase[] = [
 	// --- TestRecursive1/v4 ---
 	{
 		name: "recursive1 v4: parses nested children",
-		golden: "TestRecursive1/v4.golden",
+		golden: "TestRecursive1",
 		schema: "NestedItemSchema",
 		input: {
 			id: 1,
@@ -799,7 +798,7 @@ export const cases: TestCase[] = [
 	// --- TestRecursive2/v4 ---
 	{
 		name: "recursive2 v4: parses ParentSchema with nested next",
-		golden: "TestRecursive2/v4.golden",
+		golden: "TestRecursive2",
 		schema: "ParentSchema",
 		input: {
 			child: {
@@ -816,7 +815,7 @@ export const cases: TestCase[] = [
 	// --- TestRecursiveEmbeddedStruct/v4 ---
 	{
 		name: "recursive embedded v4: parses ItemBSchema",
-		golden: "TestRecursiveEmbeddedStruct/v4.golden",
+		golden: "TestRecursiveEmbeddedStruct",
 		schema: "ItemBSchema",
 		input: {
 			Name: "root",
@@ -832,7 +831,7 @@ export const cases: TestCase[] = [
 	{
 		name: "recursive with dates v4: parses TreeSchema",
 		golden:
-			"TestRecursiveEmbeddedWithPointersAndDates/recursive_struct_with_pointer_field_and_date/v4.golden",
+			"TestRecursiveEmbeddedWithPointersAndDates/recursive_struct_with_pointer_field_and_date",
 		schema: "TreeSchema",
 		input: {
 			UpdatedAt: "2021-01-01T00:00:00Z",
@@ -865,7 +864,7 @@ export const cases: TestCase[] = [
 	{
 		name: "embedded self-pointer with dates v4: parses ArticleSchema",
 		golden:
-			"TestRecursiveEmbeddedWithPointersAndDates/embedded_struct_with_pointer_to_self_and_date/v4.golden",
+			"TestRecursiveEmbeddedWithPointersAndDates/embedded_struct_with_pointer_to_self_and_date",
 		schema: "ArticleSchema",
 		input: {
 			Title: "Article",
@@ -968,7 +967,11 @@ export const cases: TestCase[] = [
 		name: "oneof optional: accepts with channel present",
 		golden: "TestOneofRequired.golden",
 		schema: "PayloadSchema",
-		input: { status: "active", statusImplicitRequired: "active", channel: "email" },
+		input: {
+			status: "active",
+			statusImplicitRequired: "active",
+			channel: "email",
+		},
 		success: true,
 	},
 	{
@@ -982,7 +985,11 @@ export const cases: TestCase[] = [
 		name: "oneof optional: rejects invalid channel",
 		golden: "TestOneofRequired.golden",
 		schema: "PayloadSchema",
-		input: { status: "active", statusImplicitRequired: "active", channel: "phone" },
+		input: {
+			status: "active",
+			statusImplicitRequired: "active",
+			channel: "phone",
+		},
 		success: false,
 	},
 
@@ -1412,14 +1419,14 @@ export const cases: TestCase[] = [
 	// --- emailSchema ---
 	{
 		name: "email: accepts valid email",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "emailSchema",
 		input: { value: "test@example.com" },
 		success: true,
 	},
 	{
 		name: "email: rejects invalid email",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "emailSchema",
 		input: { value: "notanemail" },
 		success: false,
@@ -1428,39 +1435,53 @@ export const cases: TestCase[] = [
 	// --- urlSchema (z.url() accepts any scheme) ---
 	{
 		name: "url: accepts https",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "urlSchema",
 		input: { value: "https://example.com" },
 		success: true,
 	},
 	{
 		name: "url: accepts ftp",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "urlSchema",
 		input: { value: "ftp://files.example.com/file.txt" },
 		success: true,
 	},
 	{
 		name: "url: accepts mailto",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "urlSchema",
 		input: { value: "mailto:user@example.com" },
 		success: true,
 	},
 	{
 		name: "url: rejects invalid url",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "urlSchema",
 		input: { value: "not a url" },
 		success: false,
 	},
 
-	// --- http_urlSchema (z.httpUrl() only accepts http/https) ---
+	// --- http_urlSchema (z.httpUrl() only accepts http/https) zod 3 accepts any URL ---
 	{
 		name: "http_url: accepts https",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "http_urlSchema",
 		input: { value: "https://example.com" },
+		success: true,
+	},
+	{
+		name: "http_url: rejects invalid url",
+		golden: "TestFormatValidators/format_only",
+		schema: "http_urlSchema",
+		input: { value: "invalid_url" },
+		success: false,
+	},
+	{
+		name: "http_url: v3 accepts non-http url",
+		golden: "TestFormatValidators/format_only/v3.golden",
+		schema: "http_urlSchema",
+		input: { value: "ftp://files.example.com/file.txt" },
 		success: true,
 	},
 	{
@@ -1481,14 +1502,14 @@ export const cases: TestCase[] = [
 	// --- ipv4Schema ---
 	{
 		name: "ipv4: accepts valid ipv4",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "ipv4Schema",
 		input: { value: "127.0.0.1" },
 		success: true,
 	},
 	{
 		name: "ipv4: rejects invalid ipv4",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "ipv4Schema",
 		input: { value: "999.999.999.999" },
 		success: false,
@@ -1497,14 +1518,14 @@ export const cases: TestCase[] = [
 	// --- ipv6Schema ---
 	{
 		name: "ipv6: accepts valid ipv6",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "ipv6Schema",
 		input: { value: "::1" },
 		success: true,
 	},
 	{
 		name: "ipv6: rejects invalid ipv6",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "ipv6Schema",
 		input: { value: "not-ipv6" },
 		success: false,
@@ -1513,14 +1534,14 @@ export const cases: TestCase[] = [
 	// --- base64Schema ---
 	{
 		name: "base64: accepts valid base64",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "base64Schema",
 		input: { value: "SGVsbG8=" },
 		success: true,
 	},
 	{
 		name: "base64: rejects invalid base64",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "base64Schema",
 		input: { value: "not base64!!!" },
 		success: false,
@@ -1529,14 +1550,14 @@ export const cases: TestCase[] = [
 	// --- uuid4Schema ---
 	{
 		name: "uuid4: accepts valid uuid v4",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "uuid4Schema",
 		input: { value: "550e8400-e29b-41d4-a716-446655440000" },
 		success: true,
 	},
 	{
 		name: "uuid4: rejects invalid uuid",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "uuid4Schema",
 		input: { value: "not-a-uuid" },
 		success: false,
@@ -1545,14 +1566,14 @@ export const cases: TestCase[] = [
 	// --- md5Schema ---
 	{
 		name: "md5: accepts valid md5 hash",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "md5Schema",
 		input: { value: "d41d8cd98f00b204e9800998ecf8427e" },
 		success: true,
 	},
 	{
 		name: "md5: rejects invalid md5",
-		golden: "TestFormatValidators/format_only/v4.golden",
+		golden: "TestFormatValidators/format_only",
 		schema: "md5Schema",
 		input: { value: "not-a-hash" },
 		success: false,
@@ -1565,21 +1586,21 @@ export const cases: TestCase[] = [
 	// --- ipSchema ---
 	{
 		name: "ip union: accepts valid ipv4",
-		golden: "TestFormatValidators/union_only/v4.golden",
+		golden: "TestFormatValidators/union_only",
 		schema: "ipSchema",
 		input: { value: "127.0.0.1" },
 		success: true,
 	},
 	{
 		name: "ip union: accepts valid ipv6",
-		golden: "TestFormatValidators/union_only/v4.golden",
+		golden: "TestFormatValidators/union_only",
 		schema: "ipSchema",
 		input: { value: "::1" },
 		success: true,
 	},
 	{
 		name: "ip union: rejects invalid ip",
-		golden: "TestFormatValidators/union_only/v4.golden",
+		golden: "TestFormatValidators/union_only",
 		schema: "ipSchema",
 		input: { value: "notanip" },
 		success: false,
@@ -1695,7 +1716,7 @@ export const cases: TestCase[] = [
 	// --- TestCustomTag/v4 ---
 	{
 		name: "custom tag v4: parses SortParamsSchema",
-		golden: "TestCustomTag/v4.golden",
+		golden: "TestCustomTag",
 		schema: "SortParamsSchema",
 		input: { order: "asc", field: "name" },
 		success: true,
@@ -1704,14 +1725,14 @@ export const cases: TestCase[] = [
 	// --- TestZodV4Defaults/enum_keyed_maps_become_partial_records ---
 	{
 		name: "v4 defaults: enum keyed maps become partial records",
-		golden: "TestMapWithEnumKey/v4.golden",
+		golden: "TestMapWithEnumKey",
 		schema: "PayloadSchema",
 		input: { Metadata: { draft: "some note" } },
 		success: true,
 	},
 	{
 		name: "v4 defaults: enum keyed maps for partial records reject invalid keys",
-		golden: "TestMapWithEnumKey/v4.golden",
+		golden: "TestMapWithEnumKey",
 		schema: "PayloadSchema",
 		input: { Metadata: { invalid: "some note" } },
 		success: false,
@@ -1730,14 +1751,14 @@ export const cases: TestCase[] = [
 	// --- TestZodV4Defaults/optional_format_with_nullable_pointer/v4 ---
 	{
 		name: "v4 defaults: optional format with nullable pointer accepts null",
-		golden: "TestZodV4Defaults/optional_format_with_nullable_pointer/v4.golden",
+		golden: "TestZodV4Defaults/optional_format_with_nullable_pointer",
 		schema: "PayloadSchema",
 		input: { email: null },
 		success: true,
 	},
 	{
 		name: "v4 defaults: optional format with nullable pointer accepts valid email",
-		golden: "TestZodV4Defaults/optional_format_with_nullable_pointer/v4.golden",
+		golden: "TestZodV4Defaults/optional_format_with_nullable_pointer",
 		schema: "PayloadSchema",
 		input: { email: "test@example.com" },
 		success: true,
@@ -1802,41 +1823,64 @@ export const cases: TestCase[] = [
 	// STRING TAG ORDER WITH FORMAT HELPERS (trim + email)
 	// ---------------------------------------------------------------------------
 
-	// --- TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers ---
+	// --- TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers ---
 	{
 		name: "trim then email: valid email passes",
-		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		golden:
+			"TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers",
 		schema: "PayloadSchema",
-		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "user@example.com" },
+		input: {
+			TrimmedThenEmail: "user@example.com",
+			EmailThenTrimmed: "user@example.com",
+		},
 		success: true,
 	},
 	{
 		name: "trim then email: invalid email rejects",
-		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		golden:
+			"TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers",
 		schema: "PayloadSchema",
-		input: { TrimmedThenEmail: "not-an-email", EmailThenTrimmed: "user@example.com" },
+		input: {
+			TrimmedThenEmail: "not-an-email",
+			EmailThenTrimmed: "user@example.com",
+		},
 		success: false,
 	},
 	{
 		name: "email then trimmed: invalid email rejects",
-		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		golden:
+			"TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers",
 		schema: "PayloadSchema",
-		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "not-an-email" },
+		input: {
+			TrimmedThenEmail: "user@example.com",
+			EmailThenTrimmed: "not-an-email",
+		},
 		success: false,
 	},
 	{
 		name: "trim then email: spaces trimmed before validation passes",
-		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		golden:
+			"TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers",
 		schema: "PayloadSchema",
-		input: { TrimmedThenEmail: "  user@example.com  ", EmailThenTrimmed: "user@example.com" },
+		input: {
+			TrimmedThenEmail: "  user@example.com  ",
+			EmailThenTrimmed: "user@example.com",
+		},
 		success: true,
-		output: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "user@example.com" },
+		output: {
+			TrimmedThenEmail: "user@example.com",
+			EmailThenTrimmed: "user@example.com",
+		},
 	},
 	{
 		name: "email then trimmed: spaces cause check to fail before trim runs",
-		golden: "TestZodV4Defaults/string_tag_order_is_preserved_around_v4_format_helpers.golden",
+		golden:
+			"TestStringValidations/string_tag_order_is_preserved_around_v4_format_helpers",
 		schema: "PayloadSchema",
-		input: { TrimmedThenEmail: "user@example.com", EmailThenTrimmed: "  user@example.com  " },
+		input: {
+			TrimmedThenEmail: "user@example.com",
+			EmailThenTrimmed: "  user@example.com  ",
+		},
 		success: false,
 	},
 ];
