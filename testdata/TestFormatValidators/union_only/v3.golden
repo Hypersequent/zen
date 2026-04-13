@@ -1,0 +1,12 @@
+// @zod-version: v3
+// @typecheck
+export const ipSchema = z.object({
+  value: z.string().ip(),
+})
+export type ip = z.infer<typeof ipSchema>
+
+export const ip_addrSchema = z.object({
+  value: z.string().ip(),
+})
+export type ip_addr = z.infer<typeof ip_addrSchema>
+

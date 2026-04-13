@@ -1,0 +1,14 @@
+// @typecheck
+export const ProfileSchema = z.object({
+  Bio: z.string(),
+})
+export type Profile = z.infer<typeof ProfileSchema>
+
+export const UserSchema = z.object({
+  MaybeName: z.string().optional().nullish(),
+  MaybeAge: z.number().optional().nullish(),
+  MaybeHeight: z.number().optional().nullish(),
+  MaybeProfile: ProfileSchema.optional().nullish(),
+})
+export type User = z.infer<typeof UserSchema>
+

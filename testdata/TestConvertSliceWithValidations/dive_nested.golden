@@ -1,0 +1,11 @@
+// @typecheck
+export const dive1Schema = z.object({
+  value: z.string().array().array().nullable(),
+})
+export type dive1 = z.infer<typeof dive1Schema>
+
+export const dive2Schema = z.object({
+  value: z.string().array().min(1).array(),
+})
+export type dive2 = z.infer<typeof dive2Schema>
+

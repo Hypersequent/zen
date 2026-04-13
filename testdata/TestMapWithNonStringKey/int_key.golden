@@ -1,0 +1,7 @@
+// @typecheck
+export const Map1Schema = z.object({
+  Name: z.string(),
+  Metadata: z.record(z.coerce.number(), z.string()).nullable(),
+})
+export type Map1 = z.infer<typeof Map1Schema>
+

@@ -1,0 +1,61 @@
+// @typecheck
+export const requiredSchema = z.object({
+  value: z.record(z.string(), z.string()),
+})
+export type required = z.infer<typeof requiredSchema>
+
+export const minSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type min = z.infer<typeof minSchema>
+
+export const maxSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
+})
+export type max = z.infer<typeof maxSchema>
+
+export const lenSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type len = z.infer<typeof lenSchema>
+
+export const minmaxSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small').refine((val) => Object.keys(val).length <= 2, 'Map too large'),
+})
+export type minmax = z.infer<typeof minmaxSchema>
+
+export const eqSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length === 1, 'Map wrong size'),
+})
+export type eq = z.infer<typeof eqSchema>
+
+export const neSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length !== 1, 'Map wrong size'),
+})
+export type ne = z.infer<typeof neSchema>
+
+export const gtSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length > 1, 'Map too small'),
+})
+export type gt = z.infer<typeof gtSchema>
+
+export const gteSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length >= 1, 'Map too small'),
+})
+export type gte = z.infer<typeof gteSchema>
+
+export const ltSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length < 1, 'Map too large'),
+})
+export type lt = z.infer<typeof ltSchema>
+
+export const lteSchema = z.object({
+  value: z.record(z.string(), z.string()).refine((val) => Object.keys(val).length <= 1, 'Map too large'),
+})
+export type lte = z.infer<typeof lteSchema>
+
+export const dive1Schema = z.object({
+  value: z.record(z.string(), z.string().refine((val) => [...val].length >= 2, 'String must contain at least 2 character(s)')).nullable(),
+})
+export type dive1 = z.infer<typeof dive1Schema>
+

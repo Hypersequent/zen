@@ -1,0 +1,17 @@
+// @zod-version: v4
+// @typecheck
+export type Node = {
+  value: number,
+  next: Node | null,
+}
+const NodeSchemaShape = {
+  value: z.number(),
+  get next() { return NodeSchema.nullable(); },
+}
+export const NodeSchema: z.ZodType<Node> = z.object(NodeSchemaShape)
+
+export const ParentSchema = z.object({
+  child: NodeSchema.nullable(),
+})
+export type Parent = z.infer<typeof ParentSchema>
+

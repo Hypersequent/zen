@@ -1,0 +1,117 @@
+// @zod-version: v3
+// @typecheck
+export const emailSchema = z.object({
+  value: z.string().email(),
+})
+export type email = z.infer<typeof emailSchema>
+
+export const urlSchema = z.object({
+  value: z.string().url(),
+})
+export type url = z.infer<typeof urlSchema>
+
+export const http_urlSchema = z.object({
+  value: z.string().url(),
+})
+export type http_url = z.infer<typeof http_urlSchema>
+
+export const ipv4Schema = z.object({
+  value: z.string().ip({ version: "v4" }),
+})
+export type ipv4 = z.infer<typeof ipv4Schema>
+
+export const ip4_addrSchema = z.object({
+  value: z.string().ip({ version: "v4" }),
+})
+export type ip4_addr = z.infer<typeof ip4_addrSchema>
+
+export const ipv6Schema = z.object({
+  value: z.string().ip({ version: "v6" }),
+})
+export type ipv6 = z.infer<typeof ipv6Schema>
+
+export const ip6_addrSchema = z.object({
+  value: z.string().ip({ version: "v6" }),
+})
+export type ip6_addr = z.infer<typeof ip6_addrSchema>
+
+export const base64Schema = z.object({
+  value: z.string().regex(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=|[A-Za-z0-9+\/]{4})$/),
+})
+export type base64 = z.infer<typeof base64Schema>
+
+export const datetimeSchema = z.object({
+  value: z.string().datetime(),
+})
+export type datetime = z.infer<typeof datetimeSchema>
+
+export const hexadecimalSchema = z.object({
+  value: z.string().regex(/^(0[xX])?[0-9a-fA-F]+$/),
+})
+export type hexadecimal = z.infer<typeof hexadecimalSchema>
+
+export const jwtSchema = z.object({
+  value: z.string().regex(/^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/),
+})
+export type jwt = z.infer<typeof jwtSchema>
+
+export const uuidSchema = z.object({
+  value: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+})
+export type uuid = z.infer<typeof uuidSchema>
+
+export const uuid3Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-3[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+})
+export type uuid3 = z.infer<typeof uuid3Schema>
+
+export const uuid3_rfc4122Schema = z.object({
+  value: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-3[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/),
+})
+export type uuid3_rfc4122 = z.infer<typeof uuid3_rfc4122Schema>
+
+export const uuid4Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+})
+export type uuid4 = z.infer<typeof uuid4Schema>
+
+export const uuid4_rfc4122Schema = z.object({
+  value: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/),
+})
+export type uuid4_rfc4122 = z.infer<typeof uuid4_rfc4122Schema>
+
+export const uuid5Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+})
+export type uuid5 = z.infer<typeof uuid5Schema>
+
+export const uuid5_rfc4122Schema = z.object({
+  value: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-5[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/),
+})
+export type uuid5_rfc4122 = z.infer<typeof uuid5_rfc4122Schema>
+
+export const uuid_rfc4122Schema = z.object({
+  value: z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/),
+})
+export type uuid_rfc4122 = z.infer<typeof uuid_rfc4122Schema>
+
+export const md5Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{32}$/),
+})
+export type md5 = z.infer<typeof md5Schema>
+
+export const sha256Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{64}$/),
+})
+export type sha256 = z.infer<typeof sha256Schema>
+
+export const sha384Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{96}$/),
+})
+export type sha384 = z.infer<typeof sha384Schema>
+
+export const sha512Schema = z.object({
+  value: z.string().regex(/^[0-9a-f]{128}$/),
+})
+export type sha512 = z.infer<typeof sha512Schema>
+

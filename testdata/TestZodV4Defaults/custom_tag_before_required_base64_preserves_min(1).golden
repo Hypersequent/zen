@@ -1,0 +1,8 @@
+// @zod-version: v4
+// @typecheck
+export const PayloadSchema = z.object({
+  Data: z.string().trim().min(1).check(z.base64()),
+  Hex: z.string().trim().min(1).check(z.hex()),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

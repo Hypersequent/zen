@@ -1,0 +1,6 @@
+// @typecheck
+export const UserSchema = z.object({
+  TagPairs: z.string().array().length(2).array().nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+

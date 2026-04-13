@@ -1,0 +1,20 @@
+// @zod-version: v4
+// @typecheck
+export type NestedItem = {
+  id: number,
+  title: string,
+  pos: number,
+  parent_id: number,
+  project_id: number,
+  children: NestedItem[] | null,
+}
+const NestedItemSchemaShape = {
+  id: z.number(),
+  title: z.string(),
+  pos: z.number(),
+  parent_id: z.number(),
+  project_id: z.number(),
+  get children() { return NestedItemSchema.array().nullable(); },
+}
+export const NestedItemSchema: z.ZodType<NestedItem> = z.object(NestedItemSchemaShape)
+

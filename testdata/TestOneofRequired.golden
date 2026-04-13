@@ -1,0 +1,8 @@
+// @typecheck
+export const PayloadSchema = z.object({
+  status: z.enum(["active", "inactive"] as const),
+  statusImplicitRequired: z.enum(["active", "inactive"] as const),
+  channel: z.enum(["email", "sms"] as const).optional(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

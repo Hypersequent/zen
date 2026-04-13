@@ -1,3 +1,4 @@
 .idea/
 tests/
-!tests/zod.test.ts
+!tests/cases.ts
+!tests/golden.test.ts

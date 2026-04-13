@@ -1,0 +1,11 @@
+// @typecheck
+export const ContainsQuoteSchema = z.object({
+  value: z.string().includes("foo\"bar"),
+})
+export type ContainsQuote = z.infer<typeof ContainsQuoteSchema>
+
+export const EqBackslashSchema = z.object({
+  value: z.string().refine((val) => val === "a\\b"),
+})
+export type EqBackslash = z.infer<typeof EqBackslashSchema>
+

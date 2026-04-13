@@ -1,0 +1,8 @@
+// @typecheck
+export const UserSchema = z.object({
+  Favourites: z.object({
+    Name: z.string(),
+  }).array().optional().nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+

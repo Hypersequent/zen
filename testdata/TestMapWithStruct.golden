@@ -1,0 +1,11 @@
+// @typecheck
+export const PostWithMetaDataSchema = z.object({
+  Title: z.string(),
+})
+export type PostWithMetaData = z.infer<typeof PostWithMetaDataSchema>
+
+export const UserSchema = z.object({
+  MapWithStruct: z.record(z.string(), PostWithMetaDataSchema).nullable(),
+})
+export type User = z.infer<typeof UserSchema>
+

@@ -1,0 +1,7 @@
+// @zod-version: v3
+// @typecheck
+export const PayloadSchema = z.object({
+  Metadata: z.record(z.enum(["draft", "published"] as const), z.string()).nullable(),
+})
+export type Payload = z.infer<typeof PayloadSchema>
+

@@ -1,0 +1,6 @@
+// @typecheck
+export const UserSchema = z.object({
+  HowLong: z.number(),
+})
+export type User = z.infer<typeof UserSchema>
+

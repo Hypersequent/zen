@@ -1,0 +1,11 @@
+// @typecheck
+export const dive2Schema = z.object({
+  value: z.record(z.string(), z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
+})
+export type dive2 = z.infer<typeof dive2Schema>
+
+export const dive3Schema = z.object({
+  value: z.record(z.string().refine((val) => [...val].length >= 3, 'String must contain at least 3 character(s)'), z.string().refine((val) => [...val].length <= 4, 'String must contain at most 4 character(s)')).refine((val) => Object.keys(val).length >= 2, 'Map too small').array(),
+})
+export type dive3 = z.infer<typeof dive3Schema>
+
