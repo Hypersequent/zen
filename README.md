@@ -304,6 +304,33 @@ opt := zen.WithIgnoreTags("identifier")
 c := zen.NewConverterWithOpts(opt)
 ```
 
+## Skipping Fields
+
+A field can be excluded from the generated schema and type with the `zen:"ignore"` struct tag:
+
+```go
+type User struct {
+	Name string
+	// Kept in the JSON response for API backward compatibility, but the
+	// frontend no longer uses it, so omit it from the generated schema.
+	LegacyToken string `json:"legacyToken" zen:"ignore"`
+}
+```
+
+Outputs:
+
+```typescript
+export const UserSchema = z.object({
+	Name: z.string(),
+})
+export type User = z.infer<typeof UserSchema>
+```
+
+This differs from `json:"-"` (which `zen` also honors): `json:"-"` drops the field from the JSON payload entirely, whereas `zen:"ignore"`
+leaves JSON serialization untouched and only removes the field from the generated schema and type. This is handy when a field must stay
+in the wire format - e.g. a deprecated field kept for backward compatibility with external API clients - but should not surface in your
+in-house frontend's types. `zen:"ignore"` also applies to embedded (anonymous) fields, which `json:"-"` cannot skip.
+
 ## Custom Types
 
 We can pass type name mappings to custom conversion functions:
