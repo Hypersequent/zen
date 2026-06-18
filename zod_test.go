@@ -106,20 +106,9 @@ func assertValidators(t *testing.T, fieldType reflect.Type, validators []struct{
 }
 
 func TestFieldName(t *testing.T) {
-	assert.Equal(t,
-		fieldName(reflect.StructField{Name: "RCONPassword"}),
-		"RCONPassword",
-	)
-
-	assert.Equal(t,
-		fieldName(reflect.StructField{Name: "LANMode"}),
-		"LANMode",
-	)
-
-	assert.Equal(t,
-		fieldName(reflect.StructField{Name: "ABC"}),
-		"ABC",
-	)
+	assert.Equal(t, "RCONPassword", fieldName(reflect.StructField{Name: "RCONPassword"}))
+	assert.Equal(t, "LANMode", fieldName(reflect.StructField{Name: "LANMode"}))
+	assert.Equal(t, "ABC", fieldName(reflect.StructField{Name: "ABC"}))
 }
 
 func TestFieldNameJsonTag(t *testing.T) {
@@ -127,10 +116,7 @@ func TestFieldNameJsonTag(t *testing.T) {
 		NotTheFieldName string `json:"fieldName"`
 	}
 
-	assert.Equal(t,
-		fieldName(reflect.TypeOf(S{}).Field(0)),
-		"fieldName",
-	)
+	assert.Equal(t, "fieldName", fieldName(reflect.TypeFor[S]().Field(0)))
 }
 
 func TestFieldNameJsonTagOmitEmpty(t *testing.T) {
@@ -138,21 +124,12 @@ func TestFieldNameJsonTagOmitEmpty(t *testing.T) {
 		NotTheFieldName string `json:"fieldName,omitempty"`
 	}
 
-	assert.Equal(t,
-		fieldName(reflect.TypeOf(S{}).Field(0)),
-		"fieldName",
-	)
+	assert.Equal(t, "fieldName", fieldName(reflect.TypeFor[S]().Field(0)))
 }
 
 func TestSchemaName(t *testing.T) {
-	assert.Equal(t,
-		schemaName("", "User"),
-		"UserSchema",
-	)
-	assert.Equal(t,
-		schemaName("Bot", "User"),
-		"BotUserSchema",
-	)
+	assert.Equal(t, "UserSchema", schemaName("", "User"))
+	assert.Equal(t, "BotUserSchema", schemaName("Bot", "User"))
 }
 
 func TestStructSimple(t *testing.T) {
@@ -296,35 +273,35 @@ func TestNullableWithValidations(t *testing.T) {
 	type User struct {
 		Name string `validate:"required"`
 
-		PtrMapOptionalNullable1 *map[string]interface{} `json:",omitempty"`
-		PtrMapOptionalNullable2 *map[string]interface{} `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		PtrMap1                 *map[string]interface{} `validate:"min=2,max=5"`
-		PtrMap2                 *map[string]interface{} `json:",omitempty" validate:"min=2,max=5"`
-		PtrMapNullable          *map[string]interface{} `validate:"omitempty,min=2,max=5"`
+		PtrMapOptionalNullable1 *map[string]any `json:",omitempty"`
+		PtrMapOptionalNullable2 *map[string]any `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		PtrMap1                 *map[string]any `                  validate:"min=2,max=5"`
+		PtrMap2                 *map[string]any `json:",omitempty" validate:"min=2,max=5"`
+		PtrMapNullable          *map[string]any `                  validate:"omitempty,min=2,max=5"`
 
-		MapOptional1 map[string]interface{} `json:",omitempty"`
-		MapOptional2 map[string]interface{} `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		Map1         map[string]interface{} `validate:"min=2,max=5"`
-		Map2         map[string]interface{} `json:",omitempty" validate:"min=2,max=5"`
-		MapNullable  map[string]interface{} `validate:"omitempty,min=2,max=5"`
+		MapOptional1 map[string]any `json:",omitempty"`
+		MapOptional2 map[string]any `json:",omitempty" validate:"omitempty,min=2,max=5"`
+		Map1         map[string]any `                  validate:"min=2,max=5"`
+		Map2         map[string]any `json:",omitempty" validate:"min=2,max=5"`
+		MapNullable  map[string]any `                  validate:"omitempty,min=2,max=5"`
 
 		PtrSliceOptionalNullable1 *[]string `json:",omitempty"`
 		PtrSliceOptionalNullable2 *[]string `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		PtrSlice1                 *[]string `validate:"min=2,max=5"`
+		PtrSlice1                 *[]string `                  validate:"min=2,max=5"`
 		PtrSlice2                 *[]string `json:",omitempty" validate:"min=2,max=5"`
-		PtrSliceNullable          *[]string `validate:"omitempty,min=2,max=5"`
+		PtrSliceNullable          *[]string `                  validate:"omitempty,min=2,max=5"`
 
 		SliceOptional1 []string `json:",omitempty"`
 		SliceOptional2 []string `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		Slice1         []string `validate:"min=2,max=5"`
+		Slice1         []string `                  validate:"min=2,max=5"`
 		Slice2         []string `json:",omitempty" validate:"min=2,max=5"`
-		SliceNullable  []string `validate:"omitempty,min=2,max=5"`
+		SliceNullable  []string `                  validate:"omitempty,min=2,max=5"`
 
 		PtrIntOptional1 *int `json:",omitempty"`
 		PtrIntOptional2 *int `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		PtrInt1         *int `validate:"min=2,max=5"`
+		PtrInt1         *int `                  validate:"min=2,max=5"`
 		PtrInt2         *int `json:",omitempty" validate:"min=2,max=5"`
-		PtrIntNullable  *int `validate:"omitempty,min=2,max=5"`
+		PtrIntNullable  *int `                  validate:"omitempty,min=2,max=5"`
 
 		// Not handled by zen for now
 		// IntOptionalNullable int `json:",omitempty"`
@@ -335,9 +312,9 @@ func TestNullableWithValidations(t *testing.T) {
 
 		PtrStringOptional1 *string `json:",omitempty"`
 		PtrStringOptional2 *string `json:",omitempty" validate:"omitempty,min=2,max=5"`
-		PtrString1         *string `validate:"min=2,max=5"`
+		PtrString1         *string `                  validate:"min=2,max=5"`
 		PtrString2         *string `json:",omitempty" validate:"min=2,max=5"`
-		PtrStringNullable  *string `validate:"omitempty,min=2,max=5"`
+		PtrStringNullable  *string `                  validate:"omitempty,min=2,max=5"`
 
 		// Not handled by zen for now
 		// StringOptionalNullable string `json:",omitempty"`
@@ -351,7 +328,7 @@ func TestNullableWithValidations(t *testing.T) {
 }
 
 func TestStringValidations(t *testing.T) {
-	assertValidators(t, reflect.TypeOf(""), []struct{ name, tag string }{
+	assertValidators(t, reflect.TypeFor[string](), []struct{ name, tag string }{
 		{"eq", "eq=hello"},
 		{"ne", "ne=hello"},
 		{"oneof", "oneof=hello world"},
@@ -427,13 +404,13 @@ func TestStringValidations(t *testing.T) {
 		c := NewConverterWithOpts()
 
 		contains := reflect.StructOf([]reflect.StructField{{
-			Name: "Value", Type: reflect.TypeOf(""),
+			Name: "Value", Type: reflect.TypeFor[string](),
 			Tag: reflect.StructTag(`validate:"contains=foo\"bar" json:"value"`),
 		}})
 		c.AddTypeWithName(reflect.New(contains).Elem().Interface(), "ContainsQuote")
 
 		eq := reflect.StructOf([]reflect.StructField{{
-			Name: "Value", Type: reflect.TypeOf(""),
+			Name: "Value", Type: reflect.TypeFor[string](),
 			Tag: reflect.StructTag(`validate:"eq=a\\b" json:"value"`),
 		}})
 		c.AddTypeWithName(reflect.New(eq).Elem().Interface(), "EqBackslash")
@@ -491,7 +468,7 @@ func TestOneofRequired(t *testing.T) {
 		// Would generate the same schema as the above. This doesn't mirror go validator exactly as it allows empty values.
 		// For now let's assume that empty strings are not valid enum values, but we can revisit if there's demand for that.
 		StatusImplicitRequired string  `json:"statusImplicitRequired" validate:"oneof=active inactive"`
-		Channel                *string `json:"channel,omitempty" validate:"omitempty,oneof=email sms"`
+		Channel                *string `json:"channel,omitempty"      validate:"omitempty,oneof=email sms"`
 	}
 
 	assertSchema(t, Payload{})
@@ -619,7 +596,7 @@ func TestZodV4Defaults(t *testing.T) {
 }
 
 func TestNumberValidations(t *testing.T) {
-	assertValidators(t, reflect.TypeOf(0), []struct{ name, tag string }{
+	assertValidators(t, reflect.TypeFor[int](), []struct{ name, tag string }{
 		{"gte_lte", "gte=18,lte=60"},
 		{"gt_lt", "gt=18,lt=60"},
 		{"eq", "eq=18"},
@@ -643,7 +620,7 @@ func TestNumberValidations(t *testing.T) {
 				assert.Panics(t, func() {
 					st := reflect.StructOf([]reflect.StructField{{
 						Name: "V",
-						Type: reflect.TypeOf(0),
+						Type: reflect.TypeFor[int](),
 						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"v"`, tag)),
 					}})
 					StructToZodSchema(reflect.New(st).Elem().Interface())
@@ -654,7 +631,7 @@ func TestNumberValidations(t *testing.T) {
 			assert.Panics(t, func() {
 				st := reflect.StructOf([]reflect.StructField{{
 					Name: "V",
-					Type: reflect.TypeOf(0),
+					Type: reflect.TypeFor[int](),
 					Tag:  reflect.StructTag(`validate:"oneof=1 abc 3" json:"v"`),
 				}})
 				StructToZodSchema(reflect.New(st).Elem().Interface())
@@ -673,7 +650,7 @@ func TestNumberValidations(t *testing.T) {
 func TestInterfaceAny(t *testing.T) {
 	type User struct {
 		Name     string
-		Metadata interface{}
+		Metadata any
 	}
 	assertSchema(t, User{})
 }
@@ -681,7 +658,7 @@ func TestInterfaceAny(t *testing.T) {
 func TestInterfacePointerAny(t *testing.T) {
 	type User struct {
 		Name     string
-		Metadata *interface{}
+		Metadata *any
 	}
 	assertSchema(t, User{})
 }
@@ -689,7 +666,7 @@ func TestInterfacePointerAny(t *testing.T) {
 func TestInterfaceEmptyAny(t *testing.T) {
 	type User struct {
 		Name     string
-		Metadata interface{} `json:",omitempty"`
+		Metadata any `json:",omitempty"`
 	}
 	assertSchema(t, User{})
 }
@@ -697,7 +674,7 @@ func TestInterfaceEmptyAny(t *testing.T) {
 func TestInterfacePointerEmptyAny(t *testing.T) {
 	type User struct {
 		Name     string
-		Metadata *interface{} `json:",omitempty"`
+		Metadata *any `json:",omitempty"`
 	}
 	assertSchema(t, User{})
 }
@@ -713,7 +690,7 @@ func TestMapStringToString(t *testing.T) {
 func TestMapStringToInterface(t *testing.T) {
 	type User struct {
 		Name     string
-		Metadata map[string]interface{}
+		Metadata map[string]any
 	}
 	assertSchema(t, User{})
 }
@@ -729,7 +706,7 @@ func TestMapWithStruct(t *testing.T) {
 }
 
 func TestMapWithValidations(t *testing.T) {
-	assertValidators(t, reflect.TypeOf(map[string]string{}), []struct{ name, tag string }{
+	assertValidators(t, reflect.TypeFor[map[string]string](), []struct{ name, tag string }{
 		{"required", "required"},
 		{"min", "min=1"},
 		{"max", "max=1"},
@@ -745,7 +722,7 @@ func TestMapWithValidations(t *testing.T) {
 	})
 
 	t.Run("dive_nested", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf([]map[string]string{}), []struct{ name, tag string }{
+		assertValidators(t, reflect.TypeFor[[]map[string]string](), []struct{ name, tag string }{
 			{"dive2", "required,dive,min=2,dive,min=3"},
 			{"dive3", "required,dive,min=2,dive,keys,min=3,endkeys,max=4"},
 		})
@@ -765,7 +742,7 @@ func TestMapWithValidations(t *testing.T) {
 				assert.Panics(t, func() {
 					st := reflect.StructOf([]reflect.StructField{{
 						Name: "M",
-						Type: reflect.TypeOf(map[string]string{}),
+						Type: reflect.TypeFor[map[string]string](),
 						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"m"`, tag)),
 					}})
 					StructToZodSchema(reflect.New(st).Elem().Interface())
@@ -817,27 +794,27 @@ func TestGetValidateKeys(t *testing.T) {
 	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,max=4"))
 	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys"))
 	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys"))
-	assert.Equal(t, "", getValidateKeys("dive,keys,endkeys,max=4"))
-	assert.Equal(t, "", getValidateKeys("dive,max=4"))
+	assert.Empty(t, getValidateKeys("dive,keys,endkeys,max=4"))
+	assert.Empty(t, getValidateKeys("dive,max=4"))
 	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,max=4,dive,keys,min=3,endkeys,max=4"))
 	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,max=4,dive,keys,min=3,max=5,endkeys,max=4"))
 	assert.Equal(t, "min=3", getValidateKeys("dive,keys,min=3,endkeys,dive,keys,min=3,endkeys"))
 	assert.Equal(t, "min=3,max=5", getValidateKeys("dive,keys,min=3,max=5,endkeys,dive,keys,min=3,max=5,endkeys"))
-	assert.Equal(t, "", getValidateKeys("dive,keys,endkeys,max=4,dive,keys,endkeys,max=4"))
+	assert.Empty(t, getValidateKeys("dive,keys,endkeys,max=4,dive,keys,endkeys,max=4"))
 	assert.Equal(t, "min=3", getValidateKeys("min=2,dive,keys,min=3,endkeys,max=4"))
 }
 
 func TestGetValidateValues(t *testing.T) {
 	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,endkeys,max=4"))
 	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,max=5,endkeys,max=4"))
-	assert.Equal(t, "", getValidateValues("dive,keys,min=3,endkeys"))
-	assert.Equal(t, "", getValidateValues("dive,keys,min=3,max=5,endkeys"))
+	assert.Empty(t, getValidateValues("dive,keys,min=3,endkeys"))
+	assert.Empty(t, getValidateValues("dive,keys,min=3,max=5,endkeys"))
 	assert.Equal(t, "max=4", getValidateValues("dive,keys,endkeys,max=4"))
 
 	assert.Equal(t, "max=4", getValidateValues("dive,keys,min=3,endkeys,max=4,dive,keys,min=3,endkeys,max=4"))
 	assert.Equal(t, "min=3,max=4", getValidateValues("dive,keys,min=3,max=5,endkeys,min=3,max=4,dive,keys,min=3,max=5,endkeys,max=4"))
-	assert.Equal(t, "", getValidateValues("dive,keys,min=3,endkeys,dive,keys,min=3,endkeys"))
-	assert.Equal(t, "", getValidateValues("dive,keys,min=3,max=5,endkeys,dive,keys,min=3,max=5,endkeys"))
+	assert.Empty(t, getValidateValues("dive,keys,min=3,endkeys,dive,keys,min=3,endkeys"))
+	assert.Empty(t, getValidateValues("dive,keys,min=3,max=5,endkeys,dive,keys,min=3,max=5,endkeys"))
 	assert.Equal(t, "max=4", getValidateValues("dive,keys,endkeys,max=4,dive,keys,endkeys,max=4"))
 
 	assert.Equal(t, "min=3", getValidateValues("min=2,dive,min=3"))
@@ -849,13 +826,13 @@ func TestGetValidateValues(t *testing.T) {
 	})
 
 	t.Run("bare dive returns empty", func(t *testing.T) {
-		assert.Equal(t, "", getValidateValues("dive"))
+		assert.Empty(t, getValidateValues("dive"))
 	})
 }
 
 func TestGetValidateCurrent(t *testing.T) {
 	assert.Equal(t, "required", getValidateCurrent("required,dive,min=2,dive,min=3"))
-	assert.Equal(t, "", getValidateCurrent("dive,min=2,dive,min=3,max=4"))
+	assert.Empty(t, getValidateCurrent("dive,min=2,dive,min=3,max=4"))
 	assert.Equal(t, "min=2,max=3", getValidateCurrent("min=2,max=3,dive,min=2,dive,min=3,max=4"))
 }
 
@@ -996,17 +973,17 @@ func TestEverything(t *testing.T) {
 			Name string
 		}
 		Posts                         []Post             // external structs are emitted as separate exports
-		Post                          Post               `json:",omitempty"` // this tag is ignored because structs don't have an empty value
+		Post                          Post               `json:",omitempty"` //nolint:modernize // intentional: omitempty is a no-op on struct fields, and zen ignores it
 		PostOptional                  *Post              `json:",omitempty"` // single struct pointers with omitempty cannot be null
 		PostOptionalNullable          **Post             `json:",omitempty"` // double struct pointers with omitempty can be null
 		Metadata                      map[string]string  // maps can be null
 		MetadataOptional              map[string]string  `json:",omitempty"` // maps with omitempty cannot be null
 		MetadataOptionalNullable      *map[string]string `json:",omitempty"` // pointers to maps with omitempty can be null or undefined
-		ExtendedProps                 interface{}        // interfaces are just "any" even though they can be null
-		ExtendedPropsOptional         interface{}        `json:",omitempty"` // interfaces with omitempty are still just "any"
-		ExtendedPropsNullable         *interface{}       // pointers to interfaces are just "any"
-		ExtendedPropsOptionalNullable *interface{}       `json:",omitempty"` // pointers to interfaces with omitempty are also just "any"
-		ExtendedPropsVeryIndirect     ****interface{}    // interfaces are always "any" no matter the levels of indirection
+		ExtendedProps                 any                // interfaces are just "any" even though they can be null
+		ExtendedPropsOptional         any                `json:",omitempty"` // interfaces with omitempty are still just "any"
+		ExtendedPropsNullable         *any               // pointers to interfaces are just "any"
+		ExtendedPropsOptionalNullable *any               `json:",omitempty"` // pointers to interfaces with omitempty are also just "any"
+		ExtendedPropsVeryIndirect     ****any            // interfaces are always "any" no matter the levels of indirection
 		NewPostWithMetaData           PostWithMetaData
 		VeryNewPost                   Post
 		MapWithStruct                 map[string]PostWithMetaData
@@ -1032,24 +1009,24 @@ func TestEverythingWithValidations(t *testing.T) {
 		Height               float64          `validate:"required,min=1.5"`
 		OldPostWithMetaData  PostWithMetaData `validate:"required"`
 		Tags                 []string         `validate:"required,min=1"`
-		TagsOptional         []string         `json:",omitempty"` // slices with omitempty cannot be null
-		TagsOptionalNullable *[]string        `json:",omitempty"` // pointers to slices with omitempty can be null or undefined
+		TagsOptional         []string         `                                 json:",omitempty"` // slices with omitempty cannot be null
+		TagsOptionalNullable *[]string        `                                 json:",omitempty"` // pointers to slices with omitempty can be null or undefined
 		Favourites           []struct {       // nested structs are kept inline
 			Name string `validate:"required"`
 		}
-		Posts                         []Post             `validate:"required"` // external structs are emitted as separate exports
-		Post                          Post               `json:",omitempty"`   // this tag is ignored because structs don't have an empty value
-		PostOptional                  *Post              `json:",omitempty"`   // single struct pointers with omitempty cannot be null
-		PostOptionalNullable          **Post             `json:",omitempty"`   // double struct pointers with omitempty can be null
+		Posts                         []Post             `validate:"required"`                                // external structs are emitted as separate exports
+		Post                          Post               `                                 json:",omitempty"` //nolint:modernize // intentional: omitempty is a no-op on struct fields, and zen ignores it
+		PostOptional                  *Post              `                                 json:",omitempty"` // single struct pointers with omitempty cannot be null
+		PostOptionalNullable          **Post             `                                 json:",omitempty"` // double struct pointers with omitempty can be null
 		Metadata                      map[string]string  // maps can be null
-		MetadataLength                map[string]string  `validate:"required,min=1,max=10"` // maps with key length 1 to 10
-		MetadataOptional              map[string]string  `json:",omitempty"`                // maps with omitempty cannot be null
-		MetadataOptionalNullable      *map[string]string `json:",omitempty"`                // pointers to maps with omitempty can be null or undefined
-		ExtendedProps                 interface{}        // interfaces are just "any" even though they can be null
-		ExtendedPropsOptional         interface{}        `json:",omitempty"` // interfaces with omitempty are still just "any"
-		ExtendedPropsNullable         *interface{}       // pointers to interfaces are just "any"
-		ExtendedPropsOptionalNullable *interface{}       `json:",omitempty"` // pointers to interfaces with omitempty are also just "any"
-		ExtendedPropsVeryIndirect     ****interface{}    // interfaces are always "any" no matter the levels of indirection
+		MetadataLength                map[string]string  `validate:"required,min=1,max=10"`                   // maps with key length 1 to 10
+		MetadataOptional              map[string]string  `                                 json:",omitempty"` // maps with omitempty cannot be null
+		MetadataOptionalNullable      *map[string]string `                                 json:",omitempty"` // pointers to maps with omitempty can be null or undefined
+		ExtendedProps                 any                // interfaces are just "any" even though they can be null
+		ExtendedPropsOptional         any                `                                 json:",omitempty"` // interfaces with omitempty are still just "any"
+		ExtendedPropsNullable         *any               // pointers to interfaces are just "any"
+		ExtendedPropsOptionalNullable *any               `                                 json:",omitempty"` // pointers to interfaces with omitempty are also just "any"
+		ExtendedPropsVeryIndirect     ****any            // interfaces are always "any" no matter the levels of indirection
 		NewPostWithMetaData           PostWithMetaData
 		VeryNewPost                   Post
 		MapWithStruct                 map[string]PostWithMetaData
@@ -1088,7 +1065,7 @@ func TestConvertSlice(t *testing.T) {
 		Wham *Foo
 	}
 
-	types := []interface{}{
+	types := []any{
 		Zip{},
 		Whim{},
 	}
@@ -1102,7 +1079,7 @@ func TestConvertSlice(t *testing.T) {
 }
 
 func TestConvertSliceWithValidations(t *testing.T) {
-	assertValidators(t, reflect.TypeOf([]string{}), []struct{ name, tag string }{
+	assertValidators(t, reflect.TypeFor[[]string](), []struct{ name, tag string }{
 		{"required", "required"},
 		{"min", "min=1"},
 		{"max", "max=1"},
@@ -1116,14 +1093,14 @@ func TestConvertSliceWithValidations(t *testing.T) {
 	})
 
 	t.Run("dive_nested", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf([][]string{}), []struct{ name, tag string }{
+		assertValidators(t, reflect.TypeFor[[][]string](), []struct{ name, tag string }{
 			{"dive1", "dive,required"},
 			{"dive2", "required,dive,min=1"},
 		})
 	})
 
 	t.Run("dive_oneof", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf([]string{}), []struct{ name, tag string }{
+		assertValidators(t, reflect.TypeFor[[]string](), []struct{ name, tag string }{
 			{"dive_oneof", "dive,oneof=a b c"},
 		})
 	})
@@ -1144,7 +1121,7 @@ func TestConvertSliceWithValidations(t *testing.T) {
 				assert.Panics(t, func() {
 					st := reflect.StructOf([]reflect.StructField{{
 						Name: "V",
-						Type: reflect.TypeOf([]string{}),
+						Type: reflect.TypeFor[[]string](),
 						Tag:  reflect.StructTag(fmt.Sprintf(`validate:"%s=abc" json:"v"`, tag)),
 					}})
 					StructToZodSchema(reflect.New(st).Elem().Interface())
@@ -1228,9 +1205,9 @@ func TestSliceFields(t *testing.T) {
 		Required         []int `validate:"required"`
 		Min              []int `validate:"min=1"`
 		OmitEmpty        []int `validate:"omitempty"`
-		JSONOmitEmpty    []int `json:",omitempty"`
+		JSONOmitEmpty    []int `                           json:",omitempty"`
 		MinOmitEmpty     []int `validate:"min=1,omitempty"`
-		JSONMinOmitEmpty []int `json:",omitempty" validate:"min=1,omitempty"`
+		JSONMinOmitEmpty []int `validate:"min=1,omitempty" json:",omitempty"`
 	}
 
 	assertSchema(t, TestSliceFieldsStruct{})
@@ -1248,7 +1225,7 @@ func TestCustomTag(t *testing.T) {
 			Start *int `json:"start,omitempty" validate:"omitempty,gt=0"`
 			End   *int `json:"end,omitempty" validate:"omitempty,gt=0"`
 		} `validate:"pageParams"`
-		Search *string `json:"search,omitempty" validate:"identifier"`
+		Search *string `validate:"identifier"                       json:"search,omitempty"`
 	}
 
 	customTagHandlers := map[string]CustomFn{
@@ -1299,7 +1276,7 @@ func TestCustomTagReceivesCorrectType(t *testing.T) {
 
 	type Payload struct {
 		Name string    `json:"name" validate:"nonzero"`
-		Age  int       `json:"age" validate:"nonzero"`
+		Age  int       `json:"age"  validate:"nonzero"`
 		When time.Time `json:"when" validate:"nonzero"`
 	}
 
@@ -1415,18 +1392,18 @@ func TestFormatValidators(t *testing.T) {
 	}
 
 	t.Run("format only", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf(""), toValidators(allFormats, ""), "v3", "v4")
+		assertValidators(t, reflect.TypeFor[string](), toValidators(allFormats, ""), "v3", "v4")
 	})
 
 	t.Run("format with required", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf(""), toValidators(allFormats, "required,"), "v3", "v4")
+		assertValidators(t, reflect.TypeFor[string](), toValidators(allFormats, "required,"), "v3", "v4")
 	})
 
 	t.Run("union only", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf(""), toValidators(unionFormats, ""), "v3", "v4")
+		assertValidators(t, reflect.TypeFor[string](), toValidators(unionFormats, ""), "v3", "v4")
 	})
 
 	t.Run("union with required", func(t *testing.T) {
-		assertValidators(t, reflect.TypeOf(""), toValidators(unionFormats, "required,"), "v3", "v4")
+		assertValidators(t, reflect.TypeFor[string](), toValidators(unionFormats, "required,"), "v3", "v4")
 	})
 }
