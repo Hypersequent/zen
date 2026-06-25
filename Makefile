@@ -1,25 +1,38 @@
-GOCMD=GO111MODULE=on go
+GO ?= go
+
+# Go modules in the workspace (see go.work). golangci-lint and `go test ./...`
+# don't cross module boundaries, so each module is handled explicitly.
+MODULES = . ./custom/decimal ./custom/optional
 
 linters-install:
 	@golangci-lint --version >/dev/null 2>&1 || { \
 		echo "installing linting tools..."; \
-		curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s v1.63.4; \
+		curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.12.2; \
 	}
 
 lint: linters-install
-	golangci-lint run
+	@for dir in $(MODULES); do \
+		echo "==> golangci-lint run ($$dir)"; \
+		(cd $$dir && golangci-lint run) || exit 1; \
+	done
+
+format: linters-install
+	@for dir in $(MODULES); do \
+		echo "==> golangci-lint fmt ($$dir)"; \
+		(cd $$dir && golangci-lint fmt) || exit 1; \
+	done
 
 test:
-	$(GOCMD) test -cover -race ./...
+	@for dir in $(MODULES); do \
+		echo "==> go test ($$dir)"; \
+		$(GO) test -C $$dir -cover -race ./... || exit 1; \
+	done
 
+# Regenerates golden files. Only the root module uses the golden fixtures.
 test-update:
-	GOLDEN_UPDATE=true $(GOCMD) test ./...
-
+	GOLDEN_UPDATE=true $(GO) test ./...
 
 docker-test:
 	./docker-test.sh
 
-bench:
-	$(GOCMD) test -bench=. -benchmem ./...
-
-.PHONY: test test-update lint linters-install docker-test bench
+.PHONY: lint format test test-update linters-install docker-test

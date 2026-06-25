@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	"4d63.com/optional"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/hypersequent/zen"
 	customoptional "github.com/hypersequent/zen/custom/optional"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestCustom(t *testing.T) {

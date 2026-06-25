@@ -3,8 +3,10 @@ package zen
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,44 +15,41 @@ import (
 // Opt represents a converter option used to modify its behavior.
 type Opt func(*Converter)
 
-// Adds prefix to the generated schema and type names.
+// WithPrefix adds prefix to the generated schema and type names.
 func WithPrefix(prefix string) Opt {
 	return func(c *Converter) {
 		c.prefix = prefix
 	}
 }
 
-// Adds custom handler/converters for types. The map should be keyed on
-// the fully qualified type name (excluding generic type arguments), ie.
-// package.typename.
+// WithCustomTypes adds custom handler/converters for types. The map should be
+// keyed on the fully qualified type name (excluding generic type arguments),
+// ie. package.typename.
 func WithCustomTypes(custom map[string]CustomFn) Opt {
 	return func(c *Converter) {
-		for k, v := range custom {
-			c.customTypes[k] = v
-		}
+		maps.Copy(c.customTypes, custom)
 	}
 }
 
-// Adds custom handler/converts for tags. The functions should return
-// strings like `.regex(/[a-z0-9_]+/)` or `.refine((val) => val !== 0)`
+// WithCustomTags adds custom handler/converts for tags. The functions should
+// return strings like `.regex(/[a-z0-9_]+/)` or `.refine((val) => val !== 0)`
 // which can be appended to the generated schema.
 func WithCustomTags(custom map[string]CustomFn) Opt {
 	return func(c *Converter) {
-		for k, v := range custom {
-			c.customTags[k] = v
-		}
+		maps.Copy(c.customTags, custom)
 	}
 }
 
-// Adds tags which should be ignored. Any unrecognized tag (which is also
-// not ignored) results in panic.
+// WithIgnoreTags adds tags which should be ignored. Any unrecognized tag
+// (which is also not ignored) results in panic.
 func WithIgnoreTags(ignores ...string) Opt {
 	return func(c *Converter) {
 		c.ignoreTags = append(c.ignoreTags, ignores...)
 	}
 }
 
-// Emits legacy Zod v3-compatible schemas instead of the default Zod v4 output.
+// WithZodV3 emits legacy Zod v3-compatible schemas instead of the default
+// Zod v4 output.
 func WithZodV3() Opt {
 	return func(c *Converter) {
 		c.zodV3 = true
@@ -84,13 +83,13 @@ func NewConverter(customTypes map[string]CustomFn) Converter {
 
 // AddTypeWithName converts a struct type to corresponding zod schema using a custom name
 // instead of the struct's type name. Useful for anonymous structs from reflect.StructOf.
-func (c *Converter) AddTypeWithName(input interface{}, name string) {
+func (c *Converter) AddTypeWithName(input any, name string) {
 	c.addType(reflect.TypeOf(input), name)
 }
 
 // AddType converts a struct type to corresponding zod schema. AddType can be called
 // multiple times, followed by Export to get the corresponding zod schemas.
-func (c *Converter) AddType(input interface{}) {
+func (c *Converter) AddType(input any) {
 	t := reflect.TypeOf(input)
 	c.addType(t, typeName(t))
 }
@@ -112,7 +111,7 @@ func (c *Converter) addType(t reflect.Type, name string) {
 // call to AddType followed by Export. So calling Convert after other calls to
 // AddType/Convert/ConvertSlice, returns schemas from those previous calls as well.
 // Calling AddType followed by Export might be more appropriate in such scenarios.
-func (c *Converter) Convert(input interface{}) string {
+func (c *Converter) Convert(input any) string {
 	c.AddType(input)
 
 	return c.Export()
@@ -122,7 +121,7 @@ func (c *Converter) Convert(input interface{}) string {
 // in the argument. Similar to Convert, calling ConvertSlice after other calls to
 // AddType/Convert/ConvertSlice, returns schemas from those previous calls as well.
 // Calling AddType followed by Export might be more appropriate in such scenarios.
-func (c *Converter) ConvertSlice(inputs []interface{}) string {
+func (c *Converter) ConvertSlice(inputs []any) string {
 	for _, input := range inputs {
 		c.AddType(input)
 	}
@@ -131,7 +130,7 @@ func (c *Converter) ConvertSlice(inputs []interface{}) string {
 }
 
 // StructToZodSchema returns zod schema corresponding to a struct type.
-func StructToZodSchema(input interface{}, opts ...Opt) string {
+func StructToZodSchema(input any, opts ...Opt) string {
 	return NewConverterWithOpts(opts...).Convert(input)
 }
 
@@ -249,7 +248,7 @@ func typeName(t reflect.Type) string {
 	if t.Kind() == reflect.Struct {
 		return getTypeNameWithGenerics(t.Name())
 	}
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return typeName(t.Elem())
 	}
 	if t.Kind() == reflect.Slice {
@@ -273,23 +272,12 @@ func (c *Converter) convertStructTopLevel(t reflect.Type, name string) (string, 
 	top := c.stack[len(c.stack)-1]
 	if top.selfRef {
 		shapeName := shapeName(c.prefix, name)
-
-		output.WriteString(fmt.Sprintf(`export type %s = %s
-`, fullName, c.getTypeStruct(t, 0)))
-
-		output.WriteString(fmt.Sprintf(`const %s = %s
-`, shapeName, c.getStructShape(t, 0)))
-
-		output.WriteString(fmt.Sprintf(
-			`export const %s: z.ZodType<%s> = z.object(%s)`, schemaName(c.prefix, name), fullName, shapeName))
+		fmt.Fprintf(&output, "export type %s = %s\n", fullName, c.getTypeStruct(t, 0))
+		fmt.Fprintf(&output, "const %s = %s\n", shapeName, c.getStructShape(t, 0))
+		fmt.Fprintf(&output, "export const %s: z.ZodType<%s> = z.object(%s)", schemaName(c.prefix, name), fullName, shapeName)
 	} else {
-		output.WriteString(fmt.Sprintf(
-			`export const %s = %s
-`,
-			schemaName(c.prefix, name), data))
-
-		output.WriteString(fmt.Sprintf(`export type %s = z.infer<typeof %s>`,
-			fullName, schemaName(c.prefix, name)))
+		fmt.Fprintf(&output, "export const %s = %s\n", schemaName(c.prefix, name), data)
+		fmt.Fprintf(&output, "export type %s = z.infer<typeof %s>", fullName, schemaName(c.prefix, name))
 	}
 
 	c.stack = c.stack[:len(c.stack)-1]
@@ -304,7 +292,7 @@ func (c *Converter) getStructShape(input reflect.Type, indent int) string {
 `)
 
 	fields := input.NumField()
-	for i := 0; i < fields; i++ {
+	for i := range fields {
 		field := input.Field(i)
 		optional := isOptional(field)
 		nullable := isNullable(field)
@@ -333,7 +321,7 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 	namedFields := []string{}
 
 	fields := input.NumField()
-	for i := 0; i < fields; i++ {
+	for i := range fields {
 		field := input.Field(i)
 		optional := isOptional(field)
 		nullable := isNullable(field)
@@ -389,7 +377,7 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 	// Collect own (non-anonymous) field names to detect shadowing.
 	fields := input.NumField()
 	ownFieldNames := map[string]bool{}
-	for i := 0; i < fields; i++ {
+	for i := range fields {
 		f := input.Field(i)
 		if !f.Anonymous {
 			if name := fieldName(f); name != "-" {
@@ -398,7 +386,7 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 		}
 	}
 
-	for i := 0; i < fields; i++ {
+	for i := range fields {
 		field := input.Field(i)
 		optional := isOptional(field)
 		nullable := isNullable(field)
@@ -411,13 +399,13 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 			// When own fields shadow embedded fields, wrap in Omit<> so the
 			// TypeScript intersection doesn't produce conflicting property types.
 			embeddedType := field.Type
-			if embeddedType.Kind() == reflect.Ptr {
+			if embeddedType.Kind() == reflect.Pointer {
 				embeddedType = embeddedType.Elem()
 			}
 			var shadowedKeys []string
 			if embeddedType.Kind() == reflect.Struct {
-				for j := 0; j < embeddedType.NumField(); j++ {
-					if name := fieldName(embeddedType.Field(j)); name != "-" && ownFieldNames[name] {
+				for field := range embeddedType.Fields() {
+					if name := fieldName(field); name != "-" && ownFieldNames[name] {
 						shadowedKeys = append(shadowedKeys, name)
 					}
 				}
@@ -442,7 +430,7 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 
 	newOutput := strings.Builder{}
 	for _, merge := range merges {
-		newOutput.WriteString(fmt.Sprintf("%s & ", merge))
+		fmt.Fprintf(&newOutput, "%s & ", merge)
 	}
 	newOutput.WriteString(output.String())
 	return newOutput.String()
@@ -492,7 +480,7 @@ func (c *Converter) ConvertType(t reflect.Type, validate string, indent int) str
 }
 
 func (c *Converter) convertType(t reflect.Type, validate string, indent int) convertResult {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		inner := t.Elem()
 		validate = strings.TrimPrefix(validate, "omitempty")
 		validate = strings.TrimPrefix(validate, ",")
@@ -520,17 +508,18 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 		name := typeName(t)
 		parts := strings.Split(validate, ",")
 
-		if name == "" {
+		switch name {
+		case "":
 			// Handle fields with non-defined types - these are inline.
 			validateStr.WriteString(c.convertStruct(t, indent))
-		} else if name == "Time" {
+		case "Time":
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
 			validateStr.WriteString("z.coerce.date()")
-		} else {
+		default:
 			if c.stack[len(c.stack)-1].name == name {
 				c.stack[len(c.stack)-1].selfRef = true
 				if c.zodV3 {
-					validateStr.WriteString(fmt.Sprintf("z.lazy(() => %s)", schemaName(c.prefix, name)))
+					fmt.Fprintf(&validateStr, "z.lazy(() => %s)", schemaName(c.prefix, name))
 				} else {
 					selfRef = true
 					validateStr.WriteString(schemaName(c.prefix, name))
@@ -554,7 +543,10 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 			case "required":
 				if name == "Time" {
 					// We compare with both the zero value from go and the zero value that zod coerces to
-					refines = append(refines, ".refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date')")
+					refines = append(
+						refines,
+						".refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date')",
+					)
 				}
 			default:
 				panic(fmt.Sprintf("unknown validation: %s", part))
@@ -589,7 +581,7 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 }
 
 func (c *Converter) getType(t reflect.Type, indent int) string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		inner := t.Elem()
 		return c.getType(inner, indent)
 	}
@@ -607,12 +599,13 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 	if t.Kind() == reflect.Struct {
 		name := typeName(t)
 
-		if t.Name() == "" {
+		switch t.Name() {
+		case "":
 			// Handle fields with non-defined types - these are inline.
 			return c.getTypeStruct(t, indent)
-		} else if t.Name() == "Time" {
+		case "Time":
 			return "Date"
-		} else {
+		default:
 			return c.prefix + name
 		}
 	}
@@ -670,8 +663,8 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
 	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
 	name := typeName(f.Type)
-	entry, ok := c.outputs[name]
-	if ok && entry.selfRef {
+	ent, ok := c.outputs[name]
+	if ok && ent.selfRef {
 		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
 		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, name)), false
 	}
@@ -682,8 +675,8 @@ func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int)
 func (c *Converter) convertEmbeddedFieldSpread(f reflect.StructField, indent int) string {
 	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
 	typeName := typeName(f.Type)
-	entry, ok := c.outputs[typeName]
-	if ok && entry.selfRef {
+	ent, ok := c.outputs[typeName]
+	if ok && ent.selfRef {
 		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
 		return fmt.Sprintf("%s...%s,\n", indentation(indent), shapeName(c.prefix, typeName))
 	}
@@ -750,16 +743,16 @@ forParts:
 				switch valName {
 				case "min":
 					requireIntArg("min", valValue)
-					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".min(%s)", valValue)
 				case "max":
 					requireIntArg("max", valValue)
-					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".max(%s)", valValue)
 				case "len":
 					requireIntArg("len", valValue)
-					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".length(%s)", valValue)
 				case "eq":
 					requireIntArg("eq", valValue)
-					validateStr.WriteString(fmt.Sprintf(".length(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".length(%s)", valValue)
 				case "ne":
 					requireIntArg("ne", valValue)
 					refines = append(refines, fmt.Sprintf(".refine((val) => val.length !== %s)", valValue))
@@ -768,19 +761,19 @@ forParts:
 					if val < 0 {
 						panic(fmt.Sprintf("invalid gt value: %s", valValue))
 					}
-					validateStr.WriteString(fmt.Sprintf(".min(%d)", val+1))
+					fmt.Fprintf(&validateStr, ".min(%d)", val+1)
 				case "gte":
 					requireIntArg("gte", valValue)
-					validateStr.WriteString(fmt.Sprintf(".min(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".min(%s)", valValue)
 				case "lt":
 					val := requireIntArg("lt", valValue)
 					if val <= 0 {
 						panic(fmt.Sprintf("invalid lt value: %s", valValue))
 					}
-					validateStr.WriteString(fmt.Sprintf(".max(%d)", val-1))
+					fmt.Fprintf(&validateStr, ".max(%d)", val-1)
 				case "lte":
 					requireIntArg("lte", valValue)
-					validateStr.WriteString(fmt.Sprintf(".max(%s)", valValue))
+					fmt.Fprintf(&validateStr, ".max(%s)", valValue)
 
 				default:
 					panic(fmt.Sprintf("unknown validation: %s", part))
@@ -800,7 +793,7 @@ forParts:
 	}
 
 	if isArray {
-		validateStr.WriteString(fmt.Sprintf(".length(%d)", t.Len()))
+		fmt.Fprintf(&validateStr, ".length(%d)", t.Len())
 	}
 
 	for _, refine := range refines {
@@ -954,7 +947,7 @@ func getValidateAfterDive(validate string) string {
 // but for map keys instead of values. Multidimensional nesting is also supported, each level you wish to
 // validate will require another 'keys' and 'endkeys' tag. These tags are only valid for maps.
 //
-// Usage: dive,keys,othertagvalidation(s),endkeys,valuevalidationtags
+// Usage: dive,keys,othertagvalidation(s),endkeys,valuevalidationtags.
 func getValidateKeys(validate string) string {
 	var validateKeys string
 	if strings.Contains(validate, "keys") {
@@ -1000,22 +993,17 @@ func getValidateValues(validate string) string {
 }
 
 func (c *Converter) checkIsIgnored(part string) bool {
-	for _, ignore := range c.ignoreTags {
-		if part == ignore {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.ignoreTags, part)
 }
 
 // not implementing omitempty for numbers and strings
-// could support unusual cases like `validate:"omitempty,min=3,max=5"`
+// could support unusual cases like `validate:"omitempty,min=3,max=5"`.
 func (c *Converter) validateNumber(validate string, t reflect.Type) string {
 	var validateStr strings.Builder
 	var refines []string
-	parts := strings.Split(validate, ",")
+	parts := strings.SplitSeq(validate, ",")
 
-	for _, part := range parts {
+	for part := range parts {
 		valName, valValue, done := c.preprocessValidationTagPart(part, &refines, &validateStr, t)
 		if done {
 			continue
@@ -1025,16 +1013,16 @@ func (c *Converter) validateNumber(validate string, t reflect.Type) string {
 			switch valName {
 			case "gt":
 				requireNumericArg("gt", valValue)
-				validateStr.WriteString(fmt.Sprintf(".gt(%s)", valValue))
+				fmt.Fprintf(&validateStr, ".gt(%s)", valValue)
 			case "gte", "min":
 				requireNumericArg(valName, valValue)
-				validateStr.WriteString(fmt.Sprintf(".gte(%s)", valValue))
+				fmt.Fprintf(&validateStr, ".gte(%s)", valValue)
 			case "lt":
 				requireNumericArg("lt", valValue)
-				validateStr.WriteString(fmt.Sprintf(".lt(%s)", valValue))
+				fmt.Fprintf(&validateStr, ".lt(%s)", valValue)
 			case "lte", "max":
 				requireNumericArg(valName, valValue)
-				validateStr.WriteString(fmt.Sprintf(".lte(%s)", valValue))
+				fmt.Fprintf(&validateStr, ".lte(%s)", valValue)
 			case "eq", "len":
 				requireNumericArg(valName, valValue)
 				refines = append(refines, fmt.Sprintf(".refine((val) => val === %s)", valValue))
@@ -1114,9 +1102,9 @@ var knownStringTags = map[string]bool{
 
 func (c *Converter) parseStringValidators(validate string) []stringValidator {
 	var validators []stringValidator
-	parts := strings.Split(validate, ",")
+	parts := strings.SplitSeq(validate, ",")
 
-	for _, rawPart := range parts {
+	for rawPart := range parts {
 		valName, valValue, skip := c.parseValidationTagPart(rawPart)
 		if skip {
 			continue
@@ -1125,7 +1113,7 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 		if h, ok := c.customTags[valName]; ok {
 			// The type parameter is string since this is a string validation context.
 			// Custom tag handlers may inspect it to vary their output by field type.
-			v := h(c, reflect.TypeOf(""), valValue, 0)
+			v := h(c, reflect.TypeFor[string](), valValue, 0)
 			validators = append(validators, stringValidator{tag: "_custom", arg: v})
 			continue
 		}
@@ -1135,7 +1123,7 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 			// skip
 		case valName == "oneof" && valValue != "":
 			vals := splitParamsRegex.FindAllString(rawPart[len("oneof="):], -1)
-			for i := 0; i < len(vals); i++ {
+			for i := range vals {
 				vals[i] = escapeJSString(strings.ReplaceAll(vals[i], "'", ""))
 			}
 			enumText := fmt.Sprintf("z.enum([\"%s\"] as const)", strings.Join(vals, "\", \""))
@@ -1291,7 +1279,7 @@ func renderUnicodeRegex(pattern string) string {
 	return fmt.Sprintf(".regex(/%s/u)", pattern)
 }
 
-// renderChain is used by both v3 and v4 rendering
+// renderChain is used by both v3 and v4 rendering.
 func renderChain(v stringValidator) string {
 	// Regex-based validators
 	if pattern, ok := regexChainMap[v.tag]; ok {
@@ -1491,7 +1479,7 @@ func (c *Converter) preprocessValidationTagPart(part string, refines *[]string, 
 		if strings.HasPrefix(v, ".refine") {
 			*refines = append(*refines, v)
 		} else {
-			(*validateStr).WriteString(v)
+			validateStr.WriteString(v)
 		}
 		return "", "", true
 	}
@@ -1516,14 +1504,14 @@ func isNullable(field reflect.StructField) bool {
 	jsonTag := field.Tag.Get("json")
 
 	// pointers can be nil, which are mapped to null in JS/TS.
-	if field.Type.Kind() == reflect.Ptr {
+	if field.Type.Kind() == reflect.Pointer {
 		// However, if a pointer field is tagged with "omitempty"/"omitzero", it usually cannot be exported
 		// as "null" since nil is a pointer's empty/zero value.
 		if strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero") {
 			// Unless it is a pointer to a slice, a map, a pointer, or an interface
 			// because values with those types can themselves be nil and will be exported as "null".
 			k := field.Type.Elem().Kind()
-			return k == reflect.Ptr || k == reflect.Slice || k == reflect.Map
+			return k == reflect.Pointer || k == reflect.Slice || k == reflect.Map
 		}
 
 		return true
@@ -1539,22 +1527,21 @@ func isNullable(field reflect.StructField) bool {
 }
 
 func getValidateCurrent(validate string) string {
-	var validateCurrent string
-
-	if strings.HasPrefix(validate, "dive") {
-	} else if strings.Contains(validate, ",dive") {
-		validateCurrent = strings.Split(validate, ",dive")[0]
-	} else {
-		validateCurrent = validate
+	switch {
+	case strings.HasPrefix(validate, "dive"):
+		// Everything is behind `dive`, so there is no current-level validation.
+		return ""
+	case strings.Contains(validate, ",dive"):
+		return strings.Split(validate, ",dive")[0]
+	default:
+		return validate
 	}
-
-	return validateCurrent
 }
 
-// Checks whether the first non-pointer type is an interface
+// Checks whether the first non-pointer type is an interface.
 func isInterface(field reflect.StructField) bool {
 	t := field.Type
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	return t.Kind() == reflect.Interface
@@ -1613,8 +1600,8 @@ func getTypeNameWithGenerics(name string) string {
 	var sb strings.Builder
 	sb.WriteString(name[:typeArgsIdx])
 
-	typeArgs := strings.Split(name[typeArgsIdx+1:len(name)-1], ",")
-	for _, arg := range typeArgs {
+	typeArgs := strings.SplitSeq(name[typeArgsIdx+1:len(name)-1], ",")
+	for arg := range typeArgs {
 		sb.WriteString(strings.ToUpper(arg[:1])) // Capitalize first letter
 		sb.WriteString(arg[1:])
 	}
