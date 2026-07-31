@@ -294,6 +294,9 @@ func (c *Converter) getStructShape(input reflect.Type, indent int) string {
 	fields := input.NumField()
 	for i := range fields {
 		field := input.Field(i)
+		if isFieldIgnored(field) {
+			continue
+		}
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
@@ -323,6 +326,9 @@ func (c *Converter) convertStruct(input reflect.Type, indent int) string {
 	fields := input.NumField()
 	for i := range fields {
 		field := input.Field(i)
+		if isFieldIgnored(field) {
+			continue
+		}
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
@@ -379,6 +385,9 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 	ownFieldNames := map[string]bool{}
 	for i := range fields {
 		f := input.Field(i)
+		if isFieldIgnored(f) {
+			continue
+		}
 		if !f.Anonymous {
 			if name := fieldName(f); name != "-" {
 				ownFieldNames[name] = true
@@ -388,6 +397,9 @@ func (c *Converter) getTypeStruct(input reflect.Type, indent int) string {
 
 	for i := range fields {
 		field := input.Field(i)
+		if isFieldIgnored(field) {
+			continue
+		}
 		optional := isOptional(field)
 		nullable := isNullable(field)
 
@@ -1545,6 +1557,13 @@ func isInterface(field reflect.StructField) bool {
 		t = t.Elem()
 	}
 	return t.Kind() == reflect.Interface
+}
+
+// isFieldIgnored reports whether a struct field should be excluded from schema
+// and type generation entirely, via the `zen:"ignore"` struct tag. Unlike
+// `json:"-"`, this also applies to embedded (anonymous) fields.
+func isFieldIgnored(field reflect.StructField) bool {
+	return field.Tag.Get("zen") == "ignore"
 }
 
 func isOptional(field reflect.StructField) bool {

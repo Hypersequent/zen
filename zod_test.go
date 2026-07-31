@@ -151,6 +151,20 @@ func TestStructSimpleWithOmittedField(t *testing.T) {
 	assertSchema(t, User{})
 }
 
+func TestStructWithIgnoredField(t *testing.T) {
+	type HasSecret struct {
+		Secret string
+	}
+	type User struct {
+		Name      string
+		Age       int
+		Internal  string `zen:"ignore"`
+		Password  string `zen:"ignore" json:"password"`
+		HasSecret `       zen:"ignore"`
+	}
+	assertSchema(t, User{})
+}
+
 func TestStructSimplePrefix(t *testing.T) {
 	type User struct {
 		Name   string
