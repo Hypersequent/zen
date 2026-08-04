@@ -11,7 +11,7 @@ export const urlSchema = z.object({
 export type url = z.infer<typeof urlSchema>
 
 export const http_urlSchema = z.object({
-  value: z.string().min(1).check(z.httpUrl()),
+  value: z.string().min(1).check(z.url({ protocol: /^https?$/ })),
 })
 export type http_url = z.infer<typeof http_urlSchema>
 
