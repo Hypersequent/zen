@@ -1134,7 +1134,7 @@ func (c *Converter) parseStringValidators(validate string) []stringValidator {
 		case valName == "omitempty":
 			// skip
 		case valName == "oneof" && valValue != "":
-			vals := splitParamsRegex.FindAllString(rawPart[len("oneof="):], -1)
+			vals := splitParamsRegex.FindAllString(valValue, -1)
 			for i := range vals {
 				vals[i] = escapeJSString(strings.ReplaceAll(vals[i], "'", ""))
 			}
@@ -1410,7 +1410,7 @@ func (c *Converter) renderV4FormatCheck(v stringValidator) string {
 	case "url":
 		return ".check(z.url())"
 	case "http_url":
-		return ".check(z.httpUrl())"
+		return ".check(z.url({ protocol: /^https?$/ }))"
 	case "ipv4", "ip4_addr":
 		return ".check(z.ipv4())"
 	case "ipv6", "ip6_addr":

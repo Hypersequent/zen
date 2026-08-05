@@ -1462,7 +1462,10 @@ export const cases: TestCase[] = [
 		success: false,
 	},
 
-	// --- http_urlSchema (z.httpUrl() only accepts http/https) zod 3 accepts any URL ---
+	// --- http_urlSchema (z.url({ protocol: /^https?$/ }) only accepts http/https,
+	// but unlike z.httpUrl() does not require a dotted/TLD-style hostname —
+	// this mirrors go-playground/validator's http_url rule zod 3's .url() accepts
+	// any scheme. ---
 	{
 		name: "http_url: accepts https",
 		golden: "TestFormatValidators/format_only",
@@ -1496,6 +1499,34 @@ export const cases: TestCase[] = [
 		golden: "TestFormatValidators/format_only/v4.golden",
 		schema: "http_urlSchema",
 		input: { value: "mailto:user@example.com" },
+		success: false,
+	},
+	{
+		name: "http_url: v4 accepts localhost with port",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "https://localhost:8080/path" },
+		success: true,
+	},
+	{
+		name: "http_url: v4 accepts IP address with port",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "http://127.0.0.1:9000/x" },
+		success: true,
+	},
+	{
+		name: "http_url: v4 accepts single-label intranet host",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "https://intranet-host/browse/X" },
+		success: true,
+	},
+	{
+		name: "http_url: v4 rejects missing host",
+		golden: "TestFormatValidators/format_only/v4.golden",
+		schema: "http_urlSchema",
+		input: { value: "http://" },
 		success: false,
 	},
 

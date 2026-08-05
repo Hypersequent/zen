@@ -68,7 +68,7 @@ fmt.Print(zen.StructToZodSchema(User{}, zen.WithZodV3()))
 
 The main migration differences are:
 
-- string format tags such as `email`, `http_url`, `ipv4`, `uuid4`, and `md5` now use Zod v4 helpers like `z.email()`, `z.httpUrl()`, `z.ipv4()`, `z.uuid({ version: "v4" })`, and `z.hash("md5")`
+- string format tags such as `email`, `http_url`, `ipv4`, `uuid4`, and `md5` now use Zod v4 helpers like `z.email()`, `z.url({ protocol: /^https?$/ })`, `z.ipv4()`, `z.uuid({ version: "v4" })`, and `z.hash("md5")`
 - `ip` and `ip_addr` now emit `z.union([z.ipv4(), z.ipv6()])`
 - embedded anonymous structs now expand through `.shape` spreads instead of `.merge(...)`
 - enum-like map keys now emit `z.partialRecord(...)`
