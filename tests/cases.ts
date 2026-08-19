@@ -1715,23 +1715,44 @@ export const cases: TestCase[] = [
 	// --- TestGenerics ---
 	{
 		name: "generics: StringIntPairSchema",
-		golden: "TestGenerics.golden",
+		golden: "TestGenerics",
 		schema: "StringIntPairSchema",
 		input: { First: "hello", Second: 42 },
 		success: true,
 	},
 	{
 		name: "generics: GenericPairIntBoolSchema",
-		golden: "TestGenerics.golden",
+		golden: "TestGenerics",
 		schema: "GenericPairIntBoolSchema",
 		input: { First: 1, Second: true },
 		success: true,
 	},
 	{
 		name: "generics: PairMapStringIntBoolSchema",
-		golden: "TestGenerics.golden",
+		golden: "TestGenerics",
 		schema: "PairMapStringIntBoolSchema",
 		input: { items: { key: { First: 1, Second: false } } },
+		success: true,
+	},
+	{
+		name: "generics: EmbeddedIntPairSchema",
+		golden: "TestGenerics",
+		schema: "EmbeddedIntPairSchema",
+		input: { First: 1, Second: 2 },
+		success: true,
+	},
+	{
+		name: "generics: EmbeddedIntTripletSchema",
+		golden: "TestGenerics",
+		schema: "EmbeddedIntTripletSchema",
+		input: { First: 1, Second: { First: 2, Second: 3 } },
+		success: true,
+	},
+	{
+		name: "generics: EmbeddedIntModelPairSchema",
+		golden: "TestGenerics",
+		schema: "EmbeddedIntModelPairSchema",
+		input: { First: 1, Second: { ID: "model" } },
 		success: true,
 	},
 
