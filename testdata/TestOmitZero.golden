@@ -1,8 +1,29 @@
 // @typecheck
+export const AddressSchema = z.object({
+  City: z.string(),
+})
+export type Address = z.infer<typeof AddressSchema>
+
 export const PayloadSchema = z.object({
   Name: z.string(),
   Nickname: z.string().optional(),
   Email: z.string().optional(),
+  Address: AddressSchema.optional(),
+  AddressOmitEmpty: AddressSchema,
+  Inline: z.object({
+    X: z.number(),
+  }).optional(),
+  CreatedAt: z.coerce.date().optional(),
+  CreatedAtEmpty: z.coerce.date(),
+  RequiredAt: z.coerce.date().refine((val) => val.getTime() !== new Date('0001-01-01T00:00:00Z').getTime() && val.getTime() !== new Date(0).getTime(), 'Invalid date'),
+  DeletedAt: z.coerce.date().optional(),
+  Pair: z.number().array().length(2).optional(),
+  Tags: z.string().array().optional(),
+  Labels: z.record(z.string(), z.string()).optional(),
+  TagsNullable: z.string().array().optional().nullable(),
+  LabelsNullable: z.record(z.string(), z.string()).optional().nullable(),
+  omitzero: z.string(),
+  omitempty: z.string(),
 })
 export type Payload = z.infer<typeof PayloadSchema>
 

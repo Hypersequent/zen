@@ -963,7 +963,7 @@ func getValidateAfterDive(validate string) string {
 func getValidateKeys(validate string) string {
 	var validateKeys string
 	if strings.Contains(validate, "keys") {
-		removedSuffix := strings.SplitN(validate, ",endkeys", 2)[0]
+		removedSuffix, _, _ := strings.Cut(validate, ",endkeys")
 		parts := strings.SplitN(removedSuffix, "keys,", 2)
 		if len(parts) == 2 {
 			validateKeys = parts[1]
@@ -1513,13 +1513,13 @@ func isNullable(field reflect.StructField) bool {
 		return false
 	}
 
-	jsonTag := field.Tag.Get("json")
+	omittable := hasJSONOption(field, "omitempty") || hasJSONOption(field, "omitzero")
 
 	// pointers can be nil, which are mapped to null in JS/TS.
 	if field.Type.Kind() == reflect.Pointer {
 		// However, if a pointer field is tagged with "omitempty"/"omitzero", it usually cannot be exported
 		// as "null" since nil is a pointer's empty/zero value.
-		if strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero") {
+		if omittable {
 			// Unless it is a pointer to a slice, a map, a pointer, or an interface
 			// because values with those types can themselves be nil and will be exported as "null".
 			k := field.Type.Elem().Kind()
@@ -1532,7 +1532,7 @@ func isNullable(field reflect.StructField) bool {
 	// nil slices and maps are exported as null so these types are usually nullable
 	if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Map {
 		// unless there are also optional in which case they are no longer nullable
-		return !strings.Contains(jsonTag, "omitempty") && !strings.Contains(jsonTag, "omitzero")
+		return !omittable
 	}
 
 	return false
@@ -1569,12 +1569,8 @@ func isFieldIgnored(field reflect.StructField) bool {
 func isOptional(field reflect.StructField) bool {
 	validateCurrent := getValidateCurrent(field.Tag.Get("validate"))
 
-	// Non-pointer struct types and direct or indirect interface types should never be optional().
-	// Struct fields that are themselves structs ignore the "omitempty" tag because
-	// structs do not have an empty value.
 	// Interfaces are currently exported with "any" type, which already includes "undefined"
-	if field.Type.Kind() == reflect.Struct || isInterface(field) ||
-		strings.Contains(validateCurrent, "required") {
+	if isInterface(field) || strings.Contains(validateCurrent, "required") {
 		return false
 	}
 
@@ -1584,9 +1580,28 @@ func isOptional(field reflect.StructField) bool {
 		return false
 	}
 
+	omitZero := hasJSONOption(field, "omitzero")
+
+	// Structs have no empty value, so "omitempty" never omits them. "omitzero" does,
+	// when the struct is zero or its IsZero method reports true (e.g. time.Time).
+	if field.Type.Kind() == reflect.Struct {
+		return omitZero
+	}
+
 	// Otherwise, omitempty/omitzero zero-values are omitted and are mapped to undefined in JS/TS.
-	jsonTag := field.Tag.Get("json")
-	return strings.Contains(jsonTag, "omitempty") || strings.Contains(jsonTag, "omitzero")
+	return omitZero || hasJSONOption(field, "omitempty")
+}
+
+// hasJSONOption reports whether the field's json tag carries the given option.
+// The tag's first element is the field name, so `json:"omitzero"` has no options.
+func hasJSONOption(field reflect.StructField, option string) bool {
+	_, options, _ := strings.Cut(field.Tag.Get("json"), ",")
+	for opt := range strings.SplitSeq(options, ",") {
+		if opt == option {
+			return true
+		}
+	}
+	return false
 }
 
 func indentation(level int) string {
