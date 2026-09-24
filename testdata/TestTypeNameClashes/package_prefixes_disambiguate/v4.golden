@@ -1,0 +1,35 @@
+// @zod-version: v4
+// @typecheck
+export const GenericModelSchema = z.object({
+  Name: z.string(),
+})
+export type GenericModel = z.infer<typeof GenericModelSchema>
+
+export const OtherGenericModelSchema = z.object({
+  ID: z.string(),
+})
+export type OtherGenericModel = z.infer<typeof OtherGenericModelSchema>
+
+export const OtherGenericPairIntOtherGenericModelSchema = z.object({
+  First: z.number(),
+  Second: OtherGenericModelSchema,
+})
+export type OtherGenericPairIntOtherGenericModel = z.infer<typeof OtherGenericPairIntOtherGenericModelSchema>
+
+export type OtherNode = {
+  Children: OtherNode[] | null,
+}
+const OtherNodeSchemaShape = {
+  get Children() { return OtherNodeSchema.array().nullable(); },
+}
+export const OtherNodeSchema: z.ZodType<OtherNode> = z.object(OtherNodeSchemaShape)
+
+export const HolderSchema = z.object({
+  Model: GenericModelSchema,
+  OtherModel: OtherGenericModelSchema,
+  Pair: OtherGenericPairIntOtherGenericModelSchema,
+  Tree: OtherNodeSchema,
+  At: z.coerce.date(),
+})
+export type Holder = z.infer<typeof HolderSchema>
+

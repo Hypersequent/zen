@@ -369,6 +369,29 @@ func(c *Converter, t reflect.Type, validate string, indent int) string
 
 We can use `c` to process nested types. Indent level is for passing to other converter APIs.
 
+## Name Clashes
+
+Schema names are derived from the Go type name alone, so two types with the same name from different packages (e.g. `api.User`
+and `db.User`, or `Page[api.User]` and `Page[db.User]`) would generate the same schema. `zen` panics when this happens, instead of
+silently reusing one type's schema for the other.
+
+To resolve it, give the types of a package a prefix. It applies wherever those types appear, including as generic type arguments:
+
+```go
+opt := zen.WithPackagePrefixes(map[string]string{
+	"github.com/acme/app/db": "Db",
+})
+c := zen.NewConverterWithOpts(opt)
+
+c.Convert(Account{
+	Owner   api.User
+	Record  db.User
+	History Page[db.User]
+})
+```
+
+Outputs `UserSchema`, `DbUserSchema` and `PageDbUserSchema`.
+
 ## Caveats
 
 - Does not support cyclic types - it's a limitation of zod, but self-referential types are supported.

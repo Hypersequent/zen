@@ -24,6 +24,16 @@ func WithPrefix(prefix string) Opt {
 	}
 }
 
+// WithPackagePrefixes prefixes the generated schema and type names of all
+// types from a package, including when they appear as generic type arguments.
+// The map is keyed on the full package path. Use it to disambiguate types with
+// the same name from different packages.
+func WithPackagePrefixes(prefixes map[string]string) Opt {
+	return func(c *Converter) {
+		maps.Copy(c.packagePrefixes, prefixes)
+	}
+}
+
 // WithCustomTypes adds custom handler/converters for types. The map should be
 // keyed on the fully qualified type name (excluding generic type arguments),
 // ie. package.typename.
@@ -61,11 +71,13 @@ func WithZodV3() Opt {
 // NewConverterWithOpts initializes and returns a new converter instance.
 func NewConverterWithOpts(opts ...Opt) *Converter {
 	c := &Converter{
-		prefix:      "",
-		customTypes: make(map[string]CustomFn),
-		customTags:  make(map[string]CustomFn),
-		ignoreTags:  []string{},
-		outputs:     make(map[string]entry),
+		prefix:          "",
+		packagePrefixes: make(map[string]string),
+		customTypes:     make(map[string]CustomFn),
+		customTags:      make(map[string]CustomFn),
+		ignoreTags:      []string{},
+		outputs:         make(map[string]entry),
+		names:           make(map[string]reflect.Type),
 	}
 
 	for _, opt := range opts {
@@ -93,7 +105,7 @@ func (c *Converter) AddTypeWithName(input any, name string) {
 // multiple times, followed by Export to get the corresponding zod schemas.
 func (c *Converter) AddType(input any) {
 	t := reflect.TypeOf(input)
-	name := typeName(t)
+	name := c.typeName(t)
 	if name == "" {
 		panic("input must be a named struct; use AddTypeWithName for anonymous structs")
 	}
@@ -108,6 +120,7 @@ func (c *Converter) addType(t reflect.Type, name string) {
 		panic("name must not be empty")
 	}
 
+	c.claimName(name, t)
 	if _, ok := c.outputs[name]; ok {
 		return
 	}
@@ -189,14 +202,40 @@ type stringValidator struct {
 }
 
 type Converter struct {
-	prefix      string
-	customTypes map[string]CustomFn
-	customTags  map[string]CustomFn
-	ignoreTags  []string
-	zodV3       bool
-	structs     int
-	outputs     map[string]entry
-	stack       []meta
+	prefix          string
+	packagePrefixes map[string]string
+	customTypes     map[string]CustomFn
+	customTags      map[string]CustomFn
+	ignoreTags      []string
+	zodV3           bool
+	structs         int
+	outputs         map[string]entry
+	stack           []meta
+	// names maps each schema name to the type it was generated from, so that
+	// outputs and stack can be matched by name alone.
+	names map[string]reflect.Type
+}
+
+// claimName panics if name is already taken by a different type, as its
+// schema would otherwise silently stand in for the other type.
+func (c *Converter) claimName(name string, t reflect.Type) {
+	existing, ok := c.names[name]
+	if !ok {
+		c.names[name] = t
+		return
+	}
+	if existing != t {
+		panic(fmt.Sprintf(
+			"schema name %q is used by both %s and %s; use WithPackagePrefixes to disambiguate",
+			name, qualifiedTypeName(existing), qualifiedTypeName(t)))
+	}
+}
+
+func qualifiedTypeName(t reflect.Type) string {
+	if t.Name() == "" {
+		return t.String()
+	}
+	return t.PkgPath() + "." + t.Name()
 }
 
 func (c *Converter) addSchema(name string, data string, selfRef bool) {
@@ -253,18 +292,21 @@ func fieldName(input reflect.StructField) string {
 	return input.Name
 }
 
-func typeName(t reflect.Type) string {
+func (c *Converter) typeName(t reflect.Type) string {
 	if t.Kind() == reflect.Struct {
-		return getTypeNameWithGenerics(t.Name())
+		if t.Name() == "" {
+			return ""
+		}
+		return c.packagePrefixes[t.PkgPath()] + getTypeNameWithGenerics(t.Name(), c.packagePrefixes)
 	}
 	if t.Kind() == reflect.Pointer {
-		return typeName(t.Elem())
+		return c.typeName(t.Elem())
 	}
 	if t.Kind() == reflect.Slice {
-		return typeName(t.Elem())
+		return c.typeName(t.Elem())
 	}
 	if t.Kind() == reflect.Map {
-		return typeName(t.Elem())
+		return c.typeName(t.Elem())
 	}
 
 	return "UNKNOWN"
@@ -526,17 +568,20 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 		var validateStr strings.Builder
 		var refines []string
 		var selfRef bool
-		name := typeName(t)
+		name := c.typeName(t)
+		// Checked on the Go name, since a package prefix may apply to the time package.
+		isTime := t.Name() == "Time"
 		parts := strings.Split(validate, ",")
 
-		switch name {
-		case "":
+		switch {
+		case name == "":
 			// Handle fields with non-defined types - these are inline.
 			validateStr.WriteString(c.convertStruct(t, indent))
-		case "Time":
+		case isTime:
 			// timestamps are to be coerced to date by zod. JSON.parse only serializes to string
 			validateStr.WriteString("z.coerce.date()")
 		default:
+			c.claimName(name, t)
 			if c.stack[len(c.stack)-1].name == name {
 				c.stack[len(c.stack)-1].selfRef = true
 				if c.zodV3 {
@@ -562,7 +607,7 @@ func (c *Converter) convertType(t reflect.Type, validate string, indent int) con
 
 			switch valName {
 			case "required":
-				if name == "Time" {
+				if isTime {
 					// We compare with both the zero value from go and the zero value that zod coerces to
 					refines = append(
 						refines,
@@ -618,7 +663,7 @@ func (c *Converter) getType(t reflect.Type, indent int) string {
 	}
 
 	if t.Kind() == reflect.Struct {
-		name := typeName(t)
+		name := c.typeName(t)
 
 		switch t.Name() {
 		case "":
@@ -683,7 +728,7 @@ func (c *Converter) convertNamedField(f reflect.StructField, indent int, optiona
 
 func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int) (string, bool) {
 	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
-	name := typeName(f.Type)
+	name := c.typeName(f.Type)
 	ent, ok := c.outputs[name]
 	if ok && ent.selfRef {
 		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
@@ -695,7 +740,7 @@ func (c *Converter) convertEmbeddedFieldMerge(f reflect.StructField, indent int)
 
 func (c *Converter) convertEmbeddedFieldSpread(f reflect.StructField, indent int) string {
 	t := c.convertType(f.Type, f.Tag.Get("validate"), indent).text
-	typeName := typeName(f.Type)
+	typeName := c.typeName(f.Type)
 	ent, ok := c.outputs[typeName]
 	if ok && ent.selfRef {
 		// Since we are spreading shape, we won't be able to support any validation tags on the embedded field
@@ -740,7 +785,7 @@ func (c *Converter) getTypeField(f reflect.StructField, indent int, optional, nu
 			optionalCallUndef), false
 	}
 
-	return typeName(f.Type), true
+	return c.typeName(f.Type), true
 }
 
 func (c *Converter) convertSliceAndArray(t reflect.Type, validate string, indent int) convertResult {
@@ -1634,7 +1679,9 @@ func detectCycle(name string, stack []meta) {
 	}
 }
 
-func getTypeNameWithGenerics(name string) string {
+// getTypeNameWithGenerics flattens generic type arguments into the type name,
+// prefixing each argument from a package in packagePrefixes.
+func getTypeNameWithGenerics(name string, packagePrefixes map[string]string) string {
 	typeArgsIdx := strings.Index(name, "[")
 	if typeArgsIdx == -1 {
 		return name
@@ -1675,6 +1722,7 @@ func getTypeNameWithGenerics(name string) string {
 			partName := typeArgs[:partEnd]
 			typeArgs = typeArgs[partEnd:]
 			if packageEnd := strings.LastIndex(partName, "."); packageEnd != -1 {
+				sb.WriteString(packagePrefixes[partName[:packageEnd]])
 				partName = partName[packageEnd+1:]
 			}
 			if partName == "" {
