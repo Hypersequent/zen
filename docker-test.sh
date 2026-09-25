@@ -18,7 +18,7 @@ echo ""
 docker run --rm \
     -v "${PROJECT_DIR}/testdata:/golden:ro" \
     -v "${PROJECT_DIR}/tests:/tests:ro" \
-    node:22-alpine \
+    node:24-alpine \
     sh -c '
 set -e
 
@@ -73,7 +73,7 @@ for dir in zod3 zod4; do
   "compilerOptions": {
     "strict": true,
     "noEmit": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "target": "ES2020",
     "module": "ES2020"
@@ -87,7 +87,7 @@ cat > /test/zod3/package.json <<PKG
 {
   "name": "zen-typecheck-zod3",
   "private": true,
-  "dependencies": { "zod": "^3", "typescript": "^5" }
+  "dependencies": { "zod": "^3", "typescript": "^7" }
 }
 PKG
 
@@ -95,7 +95,7 @@ cat > /test/zod4/package.json <<PKG
 {
   "name": "zen-typecheck-zod4",
   "private": true,
-  "dependencies": { "zod": "^4", "typescript": "^5" }
+  "dependencies": { "zod": "^4", "typescript": "^7" }
 }
 PKG
 
@@ -152,7 +152,7 @@ for dir in zod3 zod4; do
   "name": "zen-runtime-tests-${dir}",
   "private": true,
   "type": "module",
-  "dependencies": { "zod": "${zod_dep}", "vitest": "^3" }
+  "dependencies": { "zod": "${zod_dep}", "vitest": "^5" }
 }
 PKG
 

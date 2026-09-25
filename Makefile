@@ -7,7 +7,7 @@ MODULES = . ./custom/decimal ./custom/optional
 linters-install:
 	@golangci-lint --version >/dev/null 2>&1 || { \
 		echo "installing linting tools..."; \
-		curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.12.2; \
+		curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $$(go env GOPATH)/bin v2.14.0; \
 	}
 
 lint: linters-install

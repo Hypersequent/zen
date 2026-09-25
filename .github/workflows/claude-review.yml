@@ -68,7 +68,7 @@ jobs:
           # 7. Security: code scanning, secret scanning, dependabot
           # 8. Bash gh:  gh pr view/diff, gh issue view, gh api
           claude_args: |
-            --model claude-opus-4-6
+            --model claude-opus-5-5
             --max-turns 50
             --allowedTools "Task,Read,Glob,Grep,mcp__github__get_pull_request,mcp__github__get_pull_request_diff,mcp__github__pull_request_read,mcp__github__list_pull_requests,mcp__github__search_pull_requests,mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__add_reply_to_pull_request_comment,mcp__github__get_file_contents,mcp__github__get_repository_tree,mcp__github__list_commits,mcp__github__get_commit,mcp__github__search_code,mcp__github__issue_read,mcp__github__search_issues,mcp__github__list_issues,mcp__github__actions_get,mcp__github__get_job_logs,mcp__github__list_code_scanning_alerts,mcp__github__get_code_scanning_alert,mcp__github__list_secret_scanning_alerts,mcp__github__get_secret_scanning_alert,mcp__github__list_dependabot_alerts,mcp__github__get_dependabot_alert,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh api:*)"
 
