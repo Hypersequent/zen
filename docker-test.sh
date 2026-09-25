@@ -76,7 +76,8 @@ for dir in zod3 zod4; do
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "target": "ES2020",
-    "module": "ES2020"
+    "module": "ES2020",
+    "skipLibCheck": true
   },
   "include": ["*.ts"]
 }

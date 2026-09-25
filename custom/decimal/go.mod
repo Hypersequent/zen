@@ -1,6 +1,6 @@
 module github.com/hypersequent/zen/custom/decimal
 
-go 1.27
+go 1.26
 
 replace github.com/hypersequent/zen => ../..
 
