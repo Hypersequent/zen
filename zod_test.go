@@ -267,10 +267,32 @@ func TestStringOptionalNullable(t *testing.T) {
 }
 
 func TestOmitZero(t *testing.T) {
+	type Address struct {
+		City string
+	}
 	type Payload struct {
 		Name     string
 		Nickname string  `json:",omitzero"`
 		Email    *string `json:",omitzero"`
+
+		// encoding/json omits zero structs (or ones whose IsZero reports true) under
+		// omitzero, but never omits structs under omitempty.
+		Address          Address            `json:",omitzero"`
+		AddressOmitEmpty Address            `json:",omitempty"` //nolint:modernize // intentional: contrasts with omitzero
+		Inline           struct{ X int }    `json:",omitzero"`
+		CreatedAt        time.Time          `json:",omitzero"`
+		CreatedAtEmpty   time.Time          `json:",omitempty"` //nolint:modernize // intentional: contrasts with omitzero
+		RequiredAt       time.Time          `json:",omitzero"  validate:"required"`
+		DeletedAt        *time.Time         `json:",omitzero"`
+		Pair             [2]int             `json:",omitzero"`
+		Tags             []string           `json:",omitzero"` // empty slices are emitted as [], only nil is omitted
+		Labels           map[string]string  `json:",omitzero"`
+		TagsNullable     *[]string          `json:",omitzero"` // a non-nil pointer to a nil slice is emitted as null
+		LabelsNullable   *map[string]string `json:",omitzero"`
+
+		// These are field names, not options.
+		NamedOmitZero  string `json:"omitzero"`
+		NamedOmitEmpty string `json:"omitempty"`
 	}
 	assertSchema(t, Payload{})
 }
@@ -1422,6 +1444,7 @@ func TestRecursiveEmbeddedWithPointersAndDates(t *testing.T) {
 		type TreeNode struct {
 			Value     string
 			CreatedAt time.Time
+			DeletedAt time.Time `json:",omitzero"`
 			Children  *[]TreeNode
 		}
 
