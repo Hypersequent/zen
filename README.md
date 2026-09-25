@@ -378,16 +378,18 @@ silently reusing one type's schema for the other.
 To resolve it, give the types of a package a prefix. It applies wherever those types appear, including as generic type arguments:
 
 ```go
+type Account struct {
+	Owner   api.User
+	Record  db.User
+	History Page[db.User]
+}
+
 opt := zen.WithPackagePrefixes(map[string]string{
 	"github.com/acme/app/db": "Db",
 })
 c := zen.NewConverterWithOpts(opt)
 
-c.Convert(Account{
-	Owner   api.User
-	Record  db.User
-	History Page[db.User]
-})
+c.Convert(Account{})
 ```
 
 Outputs `UserSchema`, `DbUserSchema` and `PageDbUserSchema`.
