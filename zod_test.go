@@ -3,12 +3,15 @@ package zen
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/xorcare/golden"
+
+	"github.com/hypersequent/zen/internal/testmodels"
 )
 
 // goldenAssert wraps golden.Assert, prepending metadata comments to the file.
@@ -894,10 +897,6 @@ func TestDuration(t *testing.T) {
 	assertSchema(t, User{})
 }
 
-// Wrapper mimics a generic optional type like 4d63.com/optional.Optional[T].
-// The custom handler resolves the inner type via ConvertType(t.Elem(), ...).
-type Wrapper[T any] struct{ Value T }
-
 func TestCustomTypes(t *testing.T) {
 	t.Run("custom type mapped to string", func(t *testing.T) {
 		type Decimal struct {
@@ -928,14 +927,14 @@ func TestCustomTypes(t *testing.T) {
 			Bio string
 		}
 		type User struct {
-			MaybeName    Wrapper[string]
-			MaybeAge     Wrapper[int]
-			MaybeHeight  Wrapper[float64]
-			MaybeProfile Wrapper[Profile]
+			MaybeName    testmodels.Wrapper[string]
+			MaybeAge     testmodels.Wrapper[int]
+			MaybeHeight  testmodels.Wrapper[float64]
+			MaybeProfile testmodels.Wrapper[Profile]
 		}
 
 		customTypes := map[string]CustomFn{
-			"github.com/hypersequent/zen.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
+			"github.com/hypersequent/zen/internal/testmodels.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
 				return fmt.Sprintf("%s.optional().nullish()", c.ConvertType(t.Field(0).Type, validate, i))
 			},
 		}
@@ -951,11 +950,11 @@ func TestCustomTypes(t *testing.T) {
 	t.Run("custom type with nullable control", func(t *testing.T) {
 		type User struct {
 			Name  string
-			Email *Wrapper[string]
+			Email *testmodels.Wrapper[string]
 		}
 
 		customTypes := map[string]CustomFn{
-			"github.com/hypersequent/zen.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
+			"github.com/hypersequent/zen/internal/testmodels.Wrapper": func(c *Converter, t reflect.Type, validate string, i int) string {
 				return fmt.Sprintf("%s.optional()", c.ConvertType(t.Field(0).Type, validate, i))
 			},
 		}
@@ -1193,45 +1192,10 @@ func TestRecursive2(t *testing.T) {
 	assertSchema(t, Parent{}, "v3", "v4")
 }
 
-type TestCyclicA struct {
-	B *TestCyclicB
-}
-
-type TestCyclicB struct {
-	A *TestCyclicA
-}
-
 func TestCyclic(t *testing.T) {
 	assert.Panics(t, func() {
-		StructToZodSchema(TestCyclicA{})
+		StructToZodSchema(testmodels.CyclicA{})
 	})
-}
-
-type GenericModel struct {
-	ID string
-}
-
-type GenericPair[T any, U any] struct {
-	First  T
-	Second U
-}
-
-type StringIntPair GenericPair[string, int]
-
-type PairMap[K comparable, T any, U any] struct {
-	Items map[K]GenericPair[T, U] `json:"items"`
-}
-
-type EmbeddedIntPair struct {
-	GenericPair[int, int]
-}
-
-type EmbeddedIntTriplet struct {
-	GenericPair[int, GenericPair[int, int]]
-}
-
-type EmbeddedIntModelPair struct {
-	GenericPair[int, GenericModel]
 }
 
 func TestGenerics(t *testing.T) {
@@ -1243,12 +1207,12 @@ func TestGenerics(t *testing.T) {
 			}
 
 			c := NewConverterWithOpts(opts...)
-			c.AddType(StringIntPair{})
-			c.AddType(GenericPair[int, bool]{})
-			c.AddType(PairMap[string, int, bool]{})
-			c.AddType(EmbeddedIntPair{})
-			c.AddType(EmbeddedIntTriplet{})
-			c.AddType(EmbeddedIntModelPair{})
+			c.AddType(testmodels.StringIntPair{})
+			c.AddType(testmodels.GenericPair[int, bool]{})
+			c.AddType(testmodels.PairMap[string, int, bool]{})
+			c.AddType(testmodels.EmbeddedIntPair{})
+			c.AddType(testmodels.EmbeddedIntTriplet{})
+			c.AddType(testmodels.EmbeddedIntModelPair{})
 			goldenAssert(t, c.Export(), version)
 		})
 	}
@@ -1276,7 +1240,23 @@ func TestGetTypeNameWithGenerics(t *testing.T) {
 
 	for input, expected := range tests {
 		t.Run(input, func(t *testing.T) {
-			assert.Equal(t, expected, getTypeNameWithGenerics(input))
+			assert.Equal(t, expected, getTypeNameWithGenerics(input, nil))
+		})
+	}
+
+	prefixes := map[string]string{"github.com/hypersequent/zen": "Zen"}
+	prefixedTests := map[string]string{
+		"GenericPair[int,bool]": "GenericPairIntBool",
+		"GenericPair[int,github.com/hypersequent/zen.GenericModel]":                                                 "GenericPairIntZenGenericModel",
+		"GenericPair[int,map[string][]*github.com/hypersequent/zen.GenericModel]":                                   "GenericPairIntMapStringSlicePointerZenGenericModel",
+		"GenericPair[int,github.com/hypersequent/zen.GenericPair[string,github.com/hypersequent/zen.GenericModel]]": "GenericPairIntZenGenericPairStringZenGenericModel",
+		// Package paths must match exactly.
+		"GenericPair[int,github.com/hypersequent/zen/other.GenericModel]": "GenericPairIntGenericModel",
+	}
+
+	for input, expected := range prefixedTests {
+		t.Run("prefixed "+input, func(t *testing.T) {
+			assert.Equal(t, expected, getTypeNameWithGenerics(input, prefixes))
 		})
 	}
 }
@@ -1298,6 +1278,96 @@ func TestAddTypeRejectsEmptyNames(t *testing.T) {
 			"name must not be empty",
 			func() { c.AddTypeWithName(struct{ X int }{}, "") },
 		)
+	})
+}
+
+func TestTypeNameClashes(t *testing.T) {
+	const zenPkg = "github.com/hypersequent/zen"
+	const otherPkg = "github.com/hypersequent/zen/internal/testmodels"
+
+	type GenericModel struct {
+		Name string
+	}
+
+	t.Run("panics on same-named types from different packages", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		c.AddType(GenericModel{})
+		assert.PanicsWithValue(
+			t,
+			`schema name "GenericModel" is used by both `+zenPkg+`.GenericModel and `+otherPkg+`.GenericModel; use WithPackagePrefixes to disambiguate`,
+			func() { c.AddType(testmodels.GenericModel{}) },
+		)
+	})
+
+	t.Run("panics on same-named nested types", func(t *testing.T) {
+		type Holder struct {
+			Model      GenericModel
+			OtherModel testmodels.GenericModel
+		}
+		assert.PanicsWithValue(
+			t,
+			`schema name "GenericModel" is used by both `+zenPkg+`.GenericModel and `+otherPkg+`.GenericModel; use WithPackagePrefixes to disambiguate`,
+			func() { StructToZodSchema(Holder{}) },
+		)
+	})
+
+	// Without the check, the nested type is mistaken for a self-reference.
+	t.Run("panics on nested type named like its parent", func(t *testing.T) {
+		type User struct {
+			Profile testmodels.User
+		}
+		assert.PanicsWithValue(
+			t,
+			`schema name "User" is used by both `+zenPkg+`.User and `+otherPkg+`.User; use WithPackagePrefixes to disambiguate`,
+			func() { StructToZodSchema(User{}) },
+		)
+	})
+
+	t.Run("panics on generic types whose flattened names clash", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		c.AddType(testmodels.GenericPair[int, GenericModel]{})
+		var msg any
+		func() {
+			defer func() { msg = recover() }()
+			c.AddType(testmodels.GenericPair[int, testmodels.GenericModel]{})
+		}()
+		// Reflection suffixes local type arguments with an unstable "·N".
+		assert.Regexp(
+			t,
+			`^schema name "GenericPairIntGenericModel" is used by both `+
+				regexp.QuoteMeta(otherPkg+`.GenericPair[int,`+zenPkg+`.GenericModel`)+`·\d+\] and `+
+				regexp.QuoteMeta(otherPkg+`.GenericPair[int,`+otherPkg+`.GenericModel]`)+`; use WithPackagePrefixes to disambiguate$`,
+			msg,
+		)
+	})
+
+	t.Run("allows a type under multiple names", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		assert.NotPanics(t, func() {
+			c.AddType(GenericModel{})
+			c.AddType(GenericModel{})
+			c.AddTypeWithName(GenericModel{}, "Model")
+		})
+	})
+
+	t.Run("package prefixes disambiguate", func(t *testing.T) {
+		type Holder struct {
+			Model      GenericModel
+			OtherModel testmodels.GenericModel
+			Pair       testmodels.GenericPair[int, testmodels.GenericModel]
+			Tree       testmodels.Node
+			At         time.Time // stays a date even when the time package is prefixed
+		}
+
+		for _, version := range []string{"v3", "v4"} {
+			t.Run(version, func(t *testing.T) {
+				opts := []Opt{WithPackagePrefixes(map[string]string{otherPkg: "Other", "time": "Go"})}
+				if version == "v3" {
+					opts = append(opts, WithZodV3())
+				}
+				goldenAssert(t, StructToZodSchema(Holder{}, opts...), version)
+			})
+		}
 	})
 }
 
