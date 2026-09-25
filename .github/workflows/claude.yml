@@ -38,14 +38,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: '^1.26.0'
 
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.14.0
           install-mode: binary
           skip-build-cache: true
           skip-save-cache: true
@@ -79,7 +79,7 @@ jobs:
           #  9. CI/CD:      actions get/list, job logs
           # 10. Security:   code scanning, secret scanning, dependabot
           claude_args: |
-            --model claude-opus-4-6
+            --model claude-opus-5-5
             --max-turns 50
             --append-system-prompt "IMPORTANT: Read README.md at the repository root to understand what the project does (it generates Zod schemas and TypeScript types from Go structs) and its conventions before starting any work. After making ANY code changes and BEFORE committing, you MUST format, lint, and test. Follow these steps: 1. Run 'make format' to format changed .go files. 2. Run 'make lint' and fix any reported issues. 3. If your changes affect the generated Zod/TypeScript output, run 'make test-update' to regenerate the golden files, then review the diff to confirm every change is intended. 4. Run 'make test' and 'make docker-test' and fix any failures. Do NOT commit code that has lint errors or test failures, and do NOT commit golden file changes you have not reviewed."
             --allowedTools "Task,Read,Edit,Write,Glob,Grep,WebFetch,Bash(go *),Bash(make *),Bash(git *),Bash(git rebase:*),Bash(golangci-lint *),Bash(ls *),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh api:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__update_claude_comment,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__list_issues,mcp__github__search_issues,mcp__github__pull_request_read,mcp__github__create_pull_request,mcp__github__update_pull_request,mcp__github__update_pull_request_branch,mcp__github__list_pull_requests,mcp__github__search_pull_requests,mcp__github__create_pending_pull_request_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__add_reply_to_pull_request_comment,mcp__github__get_file_contents,mcp__github__get_repository_tree,mcp__github__list_commits,mcp__github__get_commit,mcp__github__search_code,mcp__github__create_branch,mcp__github__list_branches,mcp__github__actions_get,mcp__github__actions_list,mcp__github__get_job_logs,mcp__github__list_code_scanning_alerts,mcp__github__get_code_scanning_alert,mcp__github__list_secret_scanning_alerts,mcp__github__get_secret_scanning_alert,mcp__github__list_dependabot_alerts,mcp__github__get_dependabot_alert"
