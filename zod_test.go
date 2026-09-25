@@ -1185,6 +1185,10 @@ func TestCyclic(t *testing.T) {
 	})
 }
 
+type GenericModel struct {
+	ID string
+}
+
 type GenericPair[T any, U any] struct {
 	First  T
 	Second U
@@ -1196,21 +1200,83 @@ type PairMap[K comparable, T any, U any] struct {
 	Items map[K]GenericPair[T, U] `json:"items"`
 }
 
+type EmbeddedIntPair struct {
+	GenericPair[int, int]
+}
+
+type EmbeddedIntTriplet struct {
+	GenericPair[int, GenericPair[int, int]]
+}
+
+type EmbeddedIntModelPair struct {
+	GenericPair[int, GenericModel]
+}
+
 func TestGenerics(t *testing.T) {
-	c := NewConverterWithOpts()
-	c.AddType(StringIntPair{})
-	c.AddType(GenericPair[int, bool]{})
-	c.AddType(PairMap[string, int, bool]{})
+	for _, version := range []string{"v3", "v4"} {
+		t.Run(version, func(t *testing.T) {
+			var opts []Opt
+			if version == "v3" {
+				opts = append(opts, WithZodV3())
+			}
 
-	v3c := NewConverterWithOpts(WithZodV3())
-	v3c.AddType(StringIntPair{})
-	v3c.AddType(GenericPair[int, bool]{})
-	v3c.AddType(PairMap[string, int, bool]{})
+			c := NewConverterWithOpts(opts...)
+			c.AddType(StringIntPair{})
+			c.AddType(GenericPair[int, bool]{})
+			c.AddType(PairMap[string, int, bool]{})
+			c.AddType(EmbeddedIntPair{})
+			c.AddType(EmbeddedIntTriplet{})
+			c.AddType(EmbeddedIntModelPair{})
+			goldenAssert(t, c.Export(), version)
+		})
+	}
+}
 
-	v3out := v3c.Export()
-	v4out := c.Export()
-	assert.Equal(t, v3out, v4out)
-	goldenAssert(t, v4out, "")
+func TestGetTypeNameWithGenerics(t *testing.T) {
+	tests := map[string]string{
+		"SimpleType":                        "SimpleType",
+		"GenericPair[int,bool]":             "GenericPairIntBool",
+		"GenericPair[pkg.]":                 "GenericPair",
+		"GenericPair[int,zen.GenericModel]": "GenericPairIntGenericModel",
+		"GenericPair[int,github.com/hypersequent/zen.GenericModel]": "GenericPairIntGenericModel",
+		// Go reflection appends compiler-generated suffixes such as "·84" to
+		// function-local type names. Those unstable suffixes must not leak into the
+		// generated TypeScript identifiers.
+		"GenericPair[int,zen.GenericModel\u00b784]":             "GenericPairIntGenericModel",
+		"GenericPair[int,*zen.GenericModel]":                    "GenericPairIntPointerGenericModel",
+		"GenericPair[int,[]zen.GenericModel]":                   "GenericPairIntSliceGenericModel",
+		"GenericPair[int,map[string]zen.GenericModel]":          "GenericPairIntMapStringGenericModel",
+		"GenericPair[int,zen.GenericPair[string,bool]]":         "GenericPairIntGenericPairStringBool",
+		"GenericPair[int,zen.GenericPair[string,bool]\u00b785]": "GenericPairIntGenericPairStringBool",
+		"GenericPair[int,map[string][]*zen.GenericModel]":       "GenericPairIntMapStringSlicePointerGenericModel",
+		"GenericPair[int,struct{ Value zen.GenericModel }]":     "GenericPairIntStructValueGenericModel",
+	}
+
+	for input, expected := range tests {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, expected, getTypeNameWithGenerics(input))
+		})
+	}
+}
+
+func TestAddTypeRejectsEmptyNames(t *testing.T) {
+	t.Run("anonymous struct", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		assert.PanicsWithValue(
+			t,
+			"input must be a named struct; use AddTypeWithName for anonymous structs",
+			func() { c.AddType(struct{}{}) },
+		)
+	})
+
+	t.Run("empty custom name", func(t *testing.T) {
+		c := NewConverterWithOpts()
+		assert.PanicsWithValue(
+			t,
+			"name must not be empty",
+			func() { c.AddTypeWithName(struct{ X int }{}, "") },
+		)
+	})
 }
 
 func TestSliceFields(t *testing.T) {

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Opt represents a converter option used to modify its behavior.
@@ -91,12 +93,19 @@ func (c *Converter) AddTypeWithName(input any, name string) {
 // multiple times, followed by Export to get the corresponding zod schemas.
 func (c *Converter) AddType(input any) {
 	t := reflect.TypeOf(input)
-	c.addType(t, typeName(t))
+	name := typeName(t)
+	if name == "" {
+		panic("input must be a named struct; use AddTypeWithName for anonymous structs")
+	}
+	c.addType(t, name)
 }
 
 func (c *Converter) addType(t reflect.Type, name string) {
 	if t.Kind() != reflect.Struct {
 		panic("input must be a struct")
+	}
+	if name == "" {
+		panic("name must not be empty")
 	}
 
 	if _, ok := c.outputs[name]; ok {
@@ -1619,10 +1628,48 @@ func getTypeNameWithGenerics(name string) string {
 	var sb strings.Builder
 	sb.WriteString(name[:typeArgsIdx])
 
-	typeArgs := strings.SplitSeq(name[typeArgsIdx+1:len(name)-1], ",")
-	for arg := range typeArgs {
-		sb.WriteString(strings.ToUpper(arg[:1])) // Capitalize first letter
-		sb.WriteString(arg[1:])
+	// Reflected generic arguments can contain full package paths and composite
+	// type syntax. Keep only each type's unqualified name and the meaningful
+	// composite type markers.
+	typeArgs := name[typeArgsIdx+1 : len(name)-1]
+	for len(typeArgs) > 0 {
+		switch {
+		case strings.HasPrefix(typeArgs, "[]"):
+			sb.WriteString("Slice")
+			typeArgs = typeArgs[2:]
+		case strings.HasPrefix(typeArgs, "*"):
+			sb.WriteString("Pointer")
+			typeArgs = typeArgs[1:]
+		default:
+			partEnd := strings.IndexFunc(typeArgs, func(r rune) bool {
+				return r != '_' && r != '.' && r != '/' && r != '-' &&
+					!unicode.IsLetter(r) && !unicode.IsDigit(r)
+			})
+			if partEnd == -1 {
+				partEnd = len(typeArgs)
+			}
+			if partEnd == 0 {
+				delimiter, size := utf8.DecodeRuneInString(typeArgs)
+				typeArgs = typeArgs[size:]
+				if delimiter == '\u00b7' {
+					typeArgs = strings.TrimLeftFunc(typeArgs, unicode.IsDigit)
+				}
+				continue
+			}
+
+			partName := typeArgs[:partEnd]
+			typeArgs = typeArgs[partEnd:]
+			if packageEnd := strings.LastIndex(partName, "."); packageEnd != -1 {
+				partName = partName[packageEnd+1:]
+			}
+			if partName == "" {
+				continue
+			}
+
+			first, size := utf8.DecodeRuneInString(partName)
+			sb.WriteRune(unicode.ToUpper(first))
+			sb.WriteString(partName[size:])
+		}
 	}
 
 	return sb.String()

@@ -1,0 +1,54 @@
+// @zod-version: v3
+// @typecheck
+export const StringIntPairSchema = z.object({
+  First: z.string(),
+  Second: z.number(),
+})
+export type StringIntPair = z.infer<typeof StringIntPairSchema>
+
+export const GenericPairIntBoolSchema = z.object({
+  First: z.number(),
+  Second: z.boolean(),
+})
+export type GenericPairIntBool = z.infer<typeof GenericPairIntBoolSchema>
+
+export const PairMapStringIntBoolSchema = z.object({
+  items: z.record(z.string(), GenericPairIntBoolSchema).nullable(),
+})
+export type PairMapStringIntBool = z.infer<typeof PairMapStringIntBoolSchema>
+
+export const GenericPairIntIntSchema = z.object({
+  First: z.number(),
+  Second: z.number(),
+})
+export type GenericPairIntInt = z.infer<typeof GenericPairIntIntSchema>
+
+export const EmbeddedIntPairSchema = z.object({
+}).merge(GenericPairIntIntSchema)
+export type EmbeddedIntPair = z.infer<typeof EmbeddedIntPairSchema>
+
+export const GenericPairIntGenericPairIntIntSchema = z.object({
+  First: z.number(),
+  Second: GenericPairIntIntSchema,
+})
+export type GenericPairIntGenericPairIntInt = z.infer<typeof GenericPairIntGenericPairIntIntSchema>
+
+export const EmbeddedIntTripletSchema = z.object({
+}).merge(GenericPairIntGenericPairIntIntSchema)
+export type EmbeddedIntTriplet = z.infer<typeof EmbeddedIntTripletSchema>
+
+export const GenericModelSchema = z.object({
+  ID: z.string(),
+})
+export type GenericModel = z.infer<typeof GenericModelSchema>
+
+export const GenericPairIntGenericModelSchema = z.object({
+  First: z.number(),
+  Second: GenericModelSchema,
+})
+export type GenericPairIntGenericModel = z.infer<typeof GenericPairIntGenericModelSchema>
+
+export const EmbeddedIntModelPairSchema = z.object({
+}).merge(GenericPairIntGenericModelSchema)
+export type EmbeddedIntModelPair = z.infer<typeof EmbeddedIntModelPairSchema>
+
